@@ -7,4 +7,5 @@ frontend/dist/
 frontend/node_modules/
 backend/data/
 *.log
+!backend/datasets/real/**/*.log
 datasets/raw/

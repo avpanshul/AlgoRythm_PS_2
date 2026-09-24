@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.models.all import MappingRegistry, AuditLog
+from app.core.deps import get_current_user
+from app.models.all import MappingRegistry, AuditLog, User
 from app.schemas.canonical import CanonicalEvent
 from typing import List, Optional
 from pydantic import BaseModel
@@ -46,7 +47,7 @@ def list_mappings(
     return q.order_by(MappingRegistry.created_at.desc()).all()
 
 @router.post("/mappings/{mapping_id}/approve")
-def approve_mapping(mapping_id: int, req: ApproveRequest, db: Session = Depends(get_db)):
+def approve_mapping(mapping_id: int, req: ApproveRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     mapping = db.query(MappingRegistry).filter(MappingRegistry.id == mapping_id).first()
     if not mapping:
         raise HTTPException(status_code=404, detail="Mapping not found")
@@ -73,7 +74,7 @@ def approve_mapping(mapping_id: int, req: ApproveRequest, db: Session = Depends(
     return {"status": "approved", "mapping_id": mapping_id}
 
 @router.post("/mappings/{mapping_id}/reject")
-def reject_mapping(mapping_id: int, req: RejectRequest, db: Session = Depends(get_db)):
+def reject_mapping(mapping_id: int, req: RejectRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     mapping = db.query(MappingRegistry).filter(MappingRegistry.id == mapping_id).first()
     if not mapping:
         raise HTTPException(status_code=404, detail="Mapping not found")

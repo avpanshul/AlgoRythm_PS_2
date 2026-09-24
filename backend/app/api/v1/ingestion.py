@@ -8,7 +8,12 @@ from app.core.database import get_db
 from app.core.local_storage import save_raw_log
 from app.core.processing import process_raw_event
 from app.models.all import RawEventMetadata
-from app.schemas.events import IngestEventRequest, BatchIngestRequest, RawEventResponse
+from app.schemas.events import (
+    IngestEventRequest,
+    BatchIngestRequest,
+    RawEventResponse,
+    MAX_SINGLE_LOG_BYTES,
+)
 
 router = APIRouter()
 
@@ -59,8 +64,16 @@ def ingest_batch(req: BatchIngestRequest, db: Session = Depends(get_db)):
 @router.post("/ingest/syslog", response_model=RawEventResponse)
 async def ingest_syslog_raw(request: Request, db: Session = Depends(get_db)):
     body_bytes = await request.body()
-    raw_log = body_bytes.decode('utf-8').strip()
+    if len(body_bytes) > MAX_SINGLE_LOG_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Payload too large (max {MAX_SINGLE_LOG_BYTES} bytes)",
+        )
+    try:
+        raw_log = body_bytes.decode('utf-8').strip()
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="Payload must be valid UTF-8 text")
     if not raw_log:
         raise HTTPException(status_code=400, detail="Empty payload")
-    
+
     return process_single_log(db, raw_log, "UNKNOWN", "syslog-http")

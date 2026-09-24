@@ -6,7 +6,8 @@ from pydantic import BaseModel
 from datetime import datetime, timezone
 
 from app.core.database import get_db
-from app.models.all import ReplayJob, AuditLog
+from app.core.deps import get_current_user
+from app.models.all import ReplayJob, AuditLog, User
 
 router = APIRouter()
 
@@ -100,7 +101,7 @@ def get_replay_job(job_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/replay/jobs/{job_id}/approve")
-def approve_replay_job(job_id: int, approved_by: str = Query("admin"), db: Session = Depends(get_db)):
+def approve_replay_job(job_id: int, approved_by: str = Query("admin"), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     job = db.query(ReplayJob).filter(ReplayJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Replay job not found")

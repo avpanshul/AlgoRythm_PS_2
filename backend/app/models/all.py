@@ -253,6 +253,10 @@ class User(Base):
     role_name = Column(String, nullable=True)
     organization_id = Column(String, nullable=True)
     status = Column(String, nullable=False, default="active")  # active, suspended, inactive
+    # bcrypt hash of the user's password (passlib). Nullable so existing rows created
+    # before auth existed don't break; a null hash means the account cannot log in
+    # until a password is set (there is no "no password required" login path).
+    password_hash = Column(String, nullable=True)
     last_active = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

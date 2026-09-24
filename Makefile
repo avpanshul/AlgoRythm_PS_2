@@ -10,7 +10,7 @@ logs:
 	docker compose logs -f
 
 seed:
-	docker compose exec backend python -m app.utils.seed
+	docker compose exec backend python seed.py
 
 test:
 	docker compose exec backend pytest
