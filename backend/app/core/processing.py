@@ -80,6 +80,29 @@ def compute_risk_score(event_data: dict, source_ip: str = None) -> Tuple[int, st
     return score, level
 
 
+def _flatten_dict(d: dict, prefix: str = "") -> dict:
+    """Flatten an arbitrarily-nested dict (as produced by parse_xml) into {key: str_value}."""
+    out = {}
+    if not isinstance(d, dict):
+        return out
+    for k, v in d.items():
+        key = f"{prefix}.{k}" if prefix else k
+        if isinstance(v, dict):
+            out.update(_flatten_dict(v, key))
+        elif v is not None:
+            out[key.lower()] = str(v)
+    return out
+
+
+def _find_by_key_substring(flat: dict, substrings: list) -> Optional[str]:
+    """Return the first value whose flattened key contains any of the given substrings."""
+    for key, value in flat.items():
+        last_segment = key.rsplit(".", 1)[-1]
+        if any(sub in last_segment for sub in substrings):
+            return value
+    return None
+
+
 def normalize_parsed_data(parsed: dict, format_type: str, raw_log: str) -> dict:
     """Convert parsed fields into ECS-like canonical structure."""
     event_data = {}
@@ -160,8 +183,53 @@ def normalize_parsed_data(parsed: dict, format_type: str, raw_log: str) -> dict:
         user_name = parsed.get("user", {}).get("name") if isinstance(parsed.get("user"), dict) else parsed.get("userName")
         message = parsed.get("message", parsed.get("msg"))
 
+    elif format_type == "XML":
+        # deterministic.py:parse_xml() returns a nested dict keyed by root tag,
+        # e.g. {"Event": {"System": {...}, "EventData": {"#text": "..."}}}.
+        # There's no fixed schema, so flatten it and match on key-name substrings.
+        flat_kv = _flatten_dict(parsed if isinstance(parsed, dict) else {})
+        event_data = {
+            "category": _find_by_key_substring(flat_kv, ["category"]) or "unknown",
+            "type": _find_by_key_substring(flat_kv, ["eventtype", "type"]) or "unknown",
+            "action": _find_by_key_substring(flat_kv, ["action", "eventid", "task"]) or "unknown",
+            "severity": _find_by_key_substring(flat_kv, ["severity", "level"]) or "info",
+            "outcome": _find_by_key_substring(flat_kv, ["outcome", "result"]) or "unknown",
+        }
+        source_ip = _find_by_key_substring(flat_kv, ["sourceip", "sourceaddress", "srcip", "clientip"])
+        dest_ip = _find_by_key_substring(flat_kv, ["destinationip", "destip", "dstip"])
+        user_name = _find_by_key_substring(flat_kv, ["username", "user", "account"])
+        message = _find_by_key_substring(flat_kv, ["message", "#text"])
+        if not source_ip:
+            ip_matches = re.findall(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', " ".join(flat_kv.values()))
+            if ip_matches:
+                source_ip = ip_matches[0]
+                if len(ip_matches) > 1 and not dest_ip:
+                    dest_ip = ip_matches[1]
+        if not message:
+            message = json.dumps(parsed)[:500]
+
+    elif format_type == "CSV":
+        # deterministic.py:parse_csv() returns {"field_0": v, "field_1": v, ...} —
+        # positional only, no column names, so semantic fields can't be looked up
+        # by key. Best effort: scan values for IP-shaped tokens, keep full row as message.
+        row = parsed if isinstance(parsed, dict) else {}
+        values = [str(v) for v in row.values() if v]
+        event_data = {
+            "category": "unknown",
+            "type": "unknown",
+            "action": "unknown",
+            "severity": "info",
+            "outcome": "unknown",
+        }
+        ip_matches = re.findall(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', " ".join(values))
+        if ip_matches:
+            source_ip = ip_matches[0]
+            if len(ip_matches) > 1:
+                dest_ip = ip_matches[1]
+        message = ",".join(values)[:500] if values else raw_log[:500]
+
     else:
-        # CSV, XML, LEEF, UNKNOWN
+        # LEEF, UNKNOWN
         event_data = {
             "category": "unknown",
             "type": "unknown",
