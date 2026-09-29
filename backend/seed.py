@@ -1,15 +1,23 @@
 """Seed script for Demo Mode (PostgreSQL-only).
 
-Reference/config data (organizations, roles, users, sources, parsers,
-correlation rules, threat intel, integrations) is hand-authored illustrative
-metadata for the demo tenant -- it is not raw event content, so it is kept
-here as-is.
+2026-09-25: stopped seeding fabricated organizations, users, sources, threat
+indicators and integrations -- those are entity/record data that looked like
+real production state but weren't (invented org names, placeholder emails,
+non-resolvable "threat" indicators, fake integration endpoints). Per explicit
+instruction: no invented logs/events, users/organizations, alerts/threats,
+source health, threat intelligence, or integrations -- a fresh install now
+starts with none of these and shows honest empty states until a real admin
+adds real ones (see app/main.py's ADMIN_INITIAL_PASSWORD-driven seed for the
+one account a fresh install does get, from an env var, not a hardcoded name).
+
+Still seeded, and still legitimate: Role *definitions* (a permission
+taxonomy, not a claim that a real person holds that role), CorrelationRule
+*definitions* (detection logic, not a claim that a real alert fired), and
+Parser *definitions* (processing config, not a claim about real traffic seen)
+-- these describe how the system is configured, not what has happened.
 
 Event data is NOT fabricated. seed_real_events() reads real, publicly
-downloaded log lines from backend/datasets/real/ (see
-backend/datasets/real/build_corpus.py and README notes there for
-provenance: logpai/loghub raw samples -- Linux, OpenSSH, Mac, Apache,
-HDFS, Hadoop, Zookeeper, Windows, HPC, BGL) and feeds every line through
+downloaded log lines from backend/datasets/real/ and feeds every line through
 the ACTUAL production pipeline (app/core/processing.py:process_raw_event),
 the same code path app/api/v1/ingestion.py:process_single_log() uses for
 live ingestion. parser_format, risk_score, risk_level, quality_score and
@@ -17,6 +25,17 @@ canonical_json on every seeded NormalizedEvent are therefore real pipeline
 output, not hardcoded values. Lines the deterministic parser can't handle
 correctly land in DLQEvent, exactly as they would in production -- that is
 the pipeline's real fallback behavior, not simulated failure data.
+
+Four real corpora are seeded, each with its own provenance doc in its
+builder script:
+  - datasets/real/build_corpus.py            -- logpai/loghub (Linux, OpenSSH,
+    Mac, Apache, HDFS, Hadoop, Zookeeper, Windows, HPC, BGL raw samples)
+  - datasets/real/build_evtx_corpus.py       -- sbousseaden/EVTX-ATTACK-SAMPLES
+    (real Windows Event Logs from actual attack-technique execution, MIT)
+  - datasets/real/build_zeek_corpus.py       -- real Zeek/Bro IDS engine output
+    (user-supplied dataset dump; malware/notice/ssl/dhcp/ftp/irc/app_stats)
+  - datasets/real/build_cloudtrail_corpus.py -- invictus-ir/aws_dataset (MIT)
+    -- real AWS CloudTrail from a Stratus Red Team attack simulation
 """
 import os
 import sys
@@ -35,13 +54,15 @@ from app.core.database import SessionLocal, engine
 from app.core.local_storage import save_raw_log
 from app.core.processing import process_raw_event
 from app.models.all import (
-    Base, Source, User, Role, Organization, CorrelationRule, Parser,
-    ParserVersion, ThreatIndicator, Integration, PrivacyPolicy,
-    NormalizedEvent, RawEventMetadata, AuditLog, DLQEvent,
+    Base, Source, Role, CorrelationRule, Parser,
+    RawEventMetadata,
 )
 
 DATASET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "datasets", "real")
 CORPUS_PATH = os.path.join(DATASET_DIR, "corpus.jsonl")
+EVTX_CORPUS_PATH = os.path.join(DATASET_DIR, "evtx_corpus.jsonl")
+ZEEK_CORPUS_PATH = os.path.join(DATASET_DIR, "zeek_corpus.jsonl")
+CLOUDTRAIL_CORPUS_PATH = os.path.join(DATASET_DIR, "cloudtrail_corpus.jsonl")
 
 
 def create_db_and_tables():
@@ -49,61 +70,63 @@ def create_db_and_tables():
     Base.metadata.create_all(bind=engine)
 
 
-def seed_organizations(db: Session):
-    print("Seeding organizations...")
-    orgs = [
-        Organization(id="ORG-MEITY", name="MeitY Data Center", type="Government", sector="Technology"),
-        Organization(id="ORG-CERT", name="CERT-In", type="CERT", sector="Cybersecurity"),
-        Organization(id="ORG-NIC", name="National Informatics Centre", type="PSU", sector="Infrastructure"),
+def seed_sources_for_real_data(db: Session):
+    """Registers only the 5 Source rows that seed_real_events() actually
+    attributes real loghub-derived events to -- NormalizedEvent.source_id is
+    a real foreign key, so these have to exist for that real data to load.
+    No fabricated device names or organization references: vendor/product
+    describe the actual real dataset behind each one (see
+    datasets/real/build_corpus.py's FILES mapping). The two sources the old
+    seed had with zero real data behind them ("Palo Alto Edge", "CrowdStrike
+    Agents") are gone, not replaced -- there's nothing real to attribute to them."""
+    print("Seeding sources for real loghub-derived data...")
+    sources = [
+        Source(id="SYS-LNX", name="Linux/Mac/OpenSSH system logs", vendor="loghub", product="Linux_2k/Mac_2k/OpenSSH_2k", device_type="Server"),
+        Source(id="WEB-01", name="Apache web server logs", vendor="loghub", product="Apache_2k", device_type="Server"),
+        Source(id="DIST-01", name="HDFS/Hadoop/Zookeeper logs", vendor="loghub", product="HDFS_2k/Hadoop_2k/Zookeeper_2k", device_type="Application"),
+        Source(id="WIN-01", name="Windows system logs", vendor="loghub", product="Windows_2k", device_type="Server"),
+        Source(id="HPC-01", name="HPC/BlueGene system logs", vendor="loghub", product="HPC_2k/BGL_2k", device_type="Server"),
+        # sbousseaden/EVTX-ATTACK-SAMPLES (MIT) -- real Windows Event Logs from
+        # actual attack-technique execution, MITRE ATT&CK-tagged.
+        Source(id="WINEVT-ATTACK", name="Windows Event Log (attack-technique captures)", vendor="EVTX-ATTACK-SAMPLES", product="evtx_data.csv", device_type="Server"),
+        # Real Zeek/Bro IDS engine output (user-supplied dataset dump).
+        Source(id="ZEEK-NOTICE", name="Zeek IDS notices", vendor="Zeek", product="notice.log", device_type="ids"),
+        Source(id="ZEEK-SSL", name="Zeek TLS/SSL log", vendor="Zeek", product="ssl.log", device_type="ids"),
+        Source(id="ZEEK-DHCP", name="Zeek DHCP log", vendor="Zeek", product="dhcp.log", device_type="ids"),
+        Source(id="ZEEK-DPD", name="Zeek dynamic protocol detection log", vendor="Zeek", product="dpd.log", device_type="ids"),
+        Source(id="ZEEK-FTP", name="Zeek FTP log", vendor="Zeek", product="ftp.log", device_type="ids"),
+        Source(id="ZEEK-IRC", name="Zeek IRC log", vendor="Zeek", product="irc.log", device_type="ids"),
+        Source(id="ZEEK-APPSTATS", name="Zeek application stats log", vendor="Zeek", product="app_stats.log", device_type="ids"),
+        # invictus-ir/aws_dataset (MIT) -- real CloudTrail from an attack simulation.
+        Source(id="AWS-CLOUDTRAIL", name="AWS CloudTrail (attack simulation)", vendor="invictus-ir/aws_dataset", product="CloudTrail JSON export", device_type="cloud_audit"),
     ]
-    for o in orgs:
-        db.merge(o)
+    for s in sources:
+        db.merge(s)
     db.commit()
 
 
-def seed_roles_users(db: Session):
-    print("Seeding roles and users...")
+def seed_roles(db: Session):
+    """Role *definitions* only -- a permission taxonomy, not a claim that a
+    real person holds any of these roles. No User rows are seeded here
+    anymore; the only account a fresh install gets is the one app/main.py
+    creates from ADMIN_INITIAL_PASSWORD, if set."""
+    print("Seeding role definitions...")
     roles = [
-        Role(name="Security Admin", permissions=["all"]),
-        Role(name="SOC Analyst", permissions=["read_events", "read_alerts"]),
-        Role(name="Parser Developer", permissions=["write_parsers", "read_events"]),
+        Role(name="admin", permissions=["all"]),
+        Role(name="analyst", permissions=["read_events", "read_alerts"]),
+        Role(name="parser_author", permissions=["write_parsers", "read_events"]),
+        # Separate from parser_author by design (ULPF-master-prompt.md Part D1,
+        # separation of duties): a parser_author can draft/edit a parser but
+        # cannot publish it -- see app/api/v1/parsers_api.py:publish_parser,
+        # which also blocks self-publish even for this role.
+        Role(name="approver", permissions=["approve_parsers", "approve_mappings", "read_events"]),
+        Role(name="auditor", permissions=["read_audit_logs", "read_events"]),
+        Role(name="collector_operator", permissions=["ingest_events"]),
     ]
     for r in roles:
         existing = db.query(Role).filter(Role.name == r.name).first()
         if not existing:
             db.add(r)
-    db.commit()
-
-    users = [
-        User(id="U1", name="Admin User", email="admin@gov.in", role_name="Security Admin", organization_id="ORG-CERT"),
-        User(id="U2", name="SOC Analyst 1", email="analyst@gov.in", role_name="SOC Analyst", organization_id="ORG-MEITY"),
-        User(id="U3", name="Parser Dev", email="dev@gov.in", role_name="Parser Developer", organization_id="ORG-NIC"),
-    ]
-    for u in users:
-        db.merge(u)
-    db.commit()
-
-
-def seed_sources(db: Session):
-    # NOTE (labeling decision, flagged per review request): these Source rows
-    # are illustrative device/config metadata for the demo tenant, not raw
-    # event content -- "Palo Alto Edge" etc. are placeholder *names* for
-    # sources, matching the org's placeholder naming (ORG-MEITY/CERT/NIC).
-    # FW-001 and EDR-01 currently have no real event data seeded against
-    # them (no public firewall/EDR raw-log corpus was pulled in this pass);
-    # SYS-LNX, WEB-01, DIST-01, WIN-01 and HPC-01 do, via seed_real_events().
-    print("Seeding sources...")
-    sources = [
-        Source(id="FW-001", name="Palo Alto Edge", vendor="Palo Alto", product="PAN-OS", device_type="Firewall", organization_id="ORG-MEITY"),
-        Source(id="SYS-LNX", name="Core Linux Servers", vendor="Linux", product="Syslog", device_type="Server", organization_id="ORG-NIC"),
-        Source(id="WEB-01", name="Nginx Frontends", vendor="F5", product="Nginx", device_type="Proxy", organization_id="ORG-MEITY"),
-        Source(id="EDR-01", name="CrowdStrike Agents", vendor="CrowdStrike", product="Falcon", device_type="EDR", organization_id="ORG-CERT"),
-        Source(id="DIST-01", name="Distributed Systems Cluster", vendor="Apache", product="Hadoop/HDFS/Zookeeper", device_type="Application", organization_id="ORG-NIC"),
-        Source(id="WIN-01", name="Windows Servers", vendor="Microsoft", product="Windows Event Log", device_type="Server", organization_id="ORG-MEITY"),
-        Source(id="HPC-01", name="HPC Cluster", vendor="Generic", product="HPC/BlueGene", device_type="Server", organization_id="ORG-NIC"),
-    ]
-    for s in sources:
-        db.merge(s)
     db.commit()
 
 
@@ -135,35 +158,37 @@ mappings:
     db.commit()
 
 
-def _ensure_corpus():
-    """Build datasets/real/corpus.jsonl from the downloaded loghub samples if missing."""
-    if os.path.exists(CORPUS_PATH):
+def _ensure_corpus(corpus_path: str, builder_module: str):
+    """Builds a datasets/real/*.jsonl corpus from its source files if missing."""
+    if os.path.exists(corpus_path):
         return
-    print(f"{CORPUS_PATH} not found, building it from backend/datasets/real/loghub/ ...")
+    print(f"{corpus_path} not found, building it via {builder_module}.build() ...")
     sys.path.insert(0, DATASET_DIR)
-    import build_corpus
-    build_corpus.build()
+    module = __import__(builder_module)
+    module.build()
 
 
-def seed_real_events(db: Session, limit: int = None):
+def seed_real_events(db: Session, limit: int = None, corpus_path: str = None, builder_module: str = "build_corpus", label: str = "log"):
     """
     Feed real, downloaded log lines through the actual processing pipeline
     (app.core.processing.process_raw_event) -- same code path production
     ingestion uses. Every parser_format / risk_score / quality_score /
     canonical_json value that lands in Postgres comes from that real run,
-    not from this script.
+    not from this script. `corpus_path` defaults to the original loghub
+    corpus; pass EVTX_CORPUS_PATH/ZEEK_CORPUS_PATH to seed those too.
     """
-    _ensure_corpus()
-    if not os.path.exists(CORPUS_PATH):
-        print(f"WARNING: {CORPUS_PATH} still missing -- skipping real event seed.")
+    corpus_path = corpus_path or CORPUS_PATH
+    _ensure_corpus(corpus_path, builder_module)
+    if not os.path.exists(corpus_path):
+        print(f"WARNING: {corpus_path} still missing -- skipping real {label} event seed.")
         return {"ok": 0, "dlq": 0, "formats": {}}
 
-    with open(CORPUS_PATH, "r", encoding="utf-8") as f:
+    with open(corpus_path, "r", encoding="utf-8") as f:
         rows = [json.loads(line) for line in f if line.strip()]
     if limit:
         rows = rows[:limit]
 
-    print(f"Seeding {len(rows)} real log events through the real pipeline...")
+    print(f"Seeding {len(rows)} real {label} events through the real pipeline...")
 
     format_counts = {}
     ok_count = 0
@@ -207,43 +232,49 @@ def seed_real_events(db: Session, limit: int = None):
     return {"ok": ok_count, "dlq": dlq_count, "formats": format_counts}
 
 
-def seed_rules_intel_integrations(db: Session):
-    print("Seeding rules, intel, and integrations...")
+def seed_correlation_rules(db: Session):
+    """Detection rule *definitions* only -- these describe logic that would
+    fire against real matching events, not a claim that either the rule
+    matched or any threat/integration is real. No ThreatIndicator or
+    Integration rows are seeded anymore -- those would be claims about real
+    threats/connections that don't exist; a real admin adds real ones."""
+    print("Seeding correlation rule definitions...")
     rules = [
         CorrelationRule(name="Brute Force Attempt", severity="high", enabled=True, threshold=5, time_window_seconds=60, condition={"field": "action", "value": "login_failed"}),
         CorrelationRule(name="Data Exfiltration", severity="critical", enabled=True, threshold=1000000, time_window_seconds=3600, condition={"field": "bytes_out", "operator": ">"})
     ]
     for r in rules:
         db.merge(r)
-
-    intel = [
-        ThreatIndicator(type="ip", value="203.0.113.99", threat_type="C2 Server", severity="critical"),
-        ThreatIndicator(type="domain", value="evil-domain.test", threat_type="Phishing", severity="high")
-    ]
-    for i in intel:
-        db.merge(i)
-
-    integrations = [
-        Integration(name="Splunk Forwarder", type="syslog", config={"host": "10.0.0.5"}, enabled=True, status="connected"),
-        Integration(name="Slack Alerts", type="webhook", config={"url": "https://hooks.slack.com/..."}, enabled=True, status="configured")
-    ]
-    for i in integrations:
-        db.merge(i)
-
     db.commit()
 
 
 def main():
-    print("Starting full-stack DB seed...")
+    print("Starting DB seed (role/parser/rule definitions + real log data only -- no fabricated orgs/users/sources/threat-intel/integrations)...")
     db = SessionLocal()
     try:
         create_db_and_tables()
-        seed_organizations(db)
-        seed_roles_users(db)
-        seed_sources(db)
+        seed_roles(db)
+        seed_sources_for_real_data(db)
         seed_parsers(db)
-        seed_real_events(db)
-        seed_rules_intel_integrations(db)
+
+        # Publish the 9 vendor source packs *before* seeding real event
+        # corpora -- previously this ran as a separate, later manual step
+        # (scripts/seed_vendor_packs.py invoked after this script), which
+        # meant every real bulk-seeded event went through the hardcoded
+        # deterministic normalization fallback and none of the published
+        # packs' field_mappings were ever actually exercised by real data,
+        # only by each pack's own single canned fixture line. Discovered via
+        # the correlation engine (E1) surfacing 0 matches and a `source_ip`/
+        # `dest_port` audit showing 100% `mapping_method: deterministic`
+        # across all 16,864 seeded events.
+        import scripts.seed_vendor_packs as _seed_vendor_packs
+        _seed_vendor_packs.main()
+
+        seed_real_events(db, label="loghub")
+        seed_real_events(db, corpus_path=EVTX_CORPUS_PATH, builder_module="build_evtx_corpus", label="EVTX-ATTACK-SAMPLES Windows Event Log")
+        seed_real_events(db, corpus_path=ZEEK_CORPUS_PATH, builder_module="build_zeek_corpus", label="Zeek/Bro IDS")
+        seed_real_events(db, corpus_path=CLOUDTRAIL_CORPUS_PATH, builder_module="build_cloudtrail_corpus", label="AWS CloudTrail")
+        seed_correlation_rules(db)
         print("Seeding complete!")
     except Exception as e:
         print(f"Error seeding DB: {e}")

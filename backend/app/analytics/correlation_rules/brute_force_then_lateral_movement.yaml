@@ -1,0 +1,29 @@
+# ULPF-phase2-prompt.md E1 starter rule: multi-stage brute force followed by
+# lateral movement, same source IP, within a sliding window, from 2+
+# distinct log sources -- the exact "combine a telecom-vendor JSON log with
+# a grid-controller syslog line" cross-source-type scenario E1 requires, not
+# scoped to a single source type.
+id: brute_force_then_lateral_movement
+name: "Brute force followed by lateral movement"
+description: >
+  Several failed-authentication events from one source IP, followed within
+  the window by a higher-privilege or lateral-movement-shaped action from
+  the same IP -- the classic "guess the password, then move" pattern.
+window_minutes: 30
+severity: critical  # credential compromise + lateral movement -- a confirmed multi-stage
+# pattern, not a single noisy event; the real reason correlation-based
+# detections warrant their own severity rather than inheriting any one
+# matched event's own risk_score.
+correlate_by: source_ip
+min_distinct_sources: 2
+stages:
+  - name: brute_force
+    match:
+      action_contains: ["fail", "denied", "invalid", "deny"]
+    min_count: 3
+  - name: lateral_movement
+    match:
+      action_contains: ["admin", "escalat", "lateral", "logon", "success", "allow"]
+      severity_in: ["high", "critical", "medium"]
+    min_count: 1
+    after: brute_force

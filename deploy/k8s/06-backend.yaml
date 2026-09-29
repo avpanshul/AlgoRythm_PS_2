@@ -1,0 +1,115 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: ulpf
+spec:
+  replicas: 1  # AUTO_CHECKPOINT_EVERY_EVENT / the Merkle tree's single-writer
+               # assumption (see docs/benchmarks.md) means >1 replica needs
+               # that serialized before scaling out -- not attempted here.
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      # Air-gapped: this pulls only from your internal registry (see
+      # docs/deployment.md's Kubernetes section for how to get the image
+      # there without an external registry at deploy time), never a public
+      # one -- substitute REGISTRY via `kustomize edit set image` or your
+      # CI's image-tagging step.
+      containers:
+        - name: backend
+          image: REGISTRY/ulpf-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef: { name: ulpf-config }
+            - secretRef: { name: ulpf-secrets }
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits: { cpu: "1", memory: "1Gi" }
+          readinessProbe:
+            httpGet: { path: /api/v1/health, port: 8000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/v1/health, port: 8000 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000  # backend/Dockerfile's `USER ulpf` is a named user (uid 1000) -- kubelet
+            # can't resolve /etc/passwd to verify runAsNonRoot from a name alone, only a numeric
+            # runAsUser. Missing this caused a real CreateContainerConfigError on a live kind cluster
+            # ("cannot verify user is non-root"); found and fixed running the actual E10 smoke test.
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true  # Part D12 -- everything written at runtime lives
+            # under /app/data (the PVC below, still writable) or /tmp (the emptyDir below);
+            # nothing else on the image's filesystem should change once it's running.
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: backend-data
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: ulpf
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+# Backend accepts traffic only from inside the ulpf namespace (a real
+# ingress controller/gateway fronting it for external access is out of this
+# pass's scope -- 09-default-deny.yaml denies ingress from anywhere else by
+# default) and only reaches Postgres and Redpanda outbound; DNS (kube-dns)
+# is allowed so service names resolve.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-network-policy
+  namespace: ulpf
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - podSelector: {}  # any pod in this namespace (e.g. a smoke-test job) -- no cross-namespace access
+      ports:
+        - { port: 8000 }
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app: postgres } }
+      ports: [{ port: 5432 }]
+    - to:
+        - podSelector: { matchLabels: { app: redpanda } }
+      ports: [{ port: 9092 }]
+    # DNS: must target kube-dns/CoreDNS explicitly, not an empty `to: []` --
+    # an empty peer list in a NetworkPolicy egress rule means "match no
+    # peers" (i.e. deny), the opposite of what an empty list looks like it
+    # should mean. Omitting `to` entirely would mean "allow to anywhere",
+    # too broad; this targets exactly the cluster's DNS pods, by the label
+    # kind/most distros ship CoreDNS under.
+    - to:
+        - namespaceSelector: {}
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }

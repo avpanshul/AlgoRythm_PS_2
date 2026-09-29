@@ -1,0 +1,16 @@
+# Real bug found building the E10 kind smoke-test image: with no
+# .dockerignore, `docker build` was uploading the live SQLite DB, the real
+# vendor-corpus datasets, downloaded tool binaries, and test caches into the
+# build context -- none of which belong in the image, and which (over the
+# slow Windows-filesystem-to-WSL2 bridge Docker Desktop uses) turned a
+# few-second context transfer into a multi-minute one. See docs/deployment.md.
+data/
+datasets/
+bin/
+.pytest_cache/
+.hypothesis/
+__pycache__/
+**/__pycache__/
+*.pyc
+tests/
+.git/

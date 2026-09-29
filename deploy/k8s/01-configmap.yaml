@@ -1,0 +1,30 @@
+# Non-secret configuration shared across ULPF's Kubernetes workloads.
+# Secrets (DB password, JWT secret, vault encryption key, PKCS11 PIN, SMS
+# gateway API key) belong in 02-secret.example.yaml's real counterpart, never
+# here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ulpf-config
+  namespace: ulpf
+data:
+  POSTGRES_HOST: "postgres"
+  # Explicit, not just relying on the app's own default: Kubernetes
+  # auto-injects a legacy Docker-links-style `POSTGRES_PORT=tcp://<ip>:5432`
+  # into every pod in this namespace because the Service is named
+  # "postgres" -- that collided with the app's own POSTGRES_PORT env var
+  # and crashed SQLAlchemy's URL parser ("invalid literal for int(): 'tcp:'").
+  # A real bug, only found running this on a real live cluster -- kubeconform
+  # schema validation can't catch it, since it's runtime env injection, not
+  # a manifest error.
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "ulp_db"
+  POSTGRES_USER: "ulp"
+  KAFKA_BROKERS: "redpanda:9092"
+  INGEST_BACKEND: "kafka"  # the whole point of running a multi-node cluster is the async path
+  AIRGAPPED_MODE: "true"
+  KEY_BACKEND: "file"  # set to "pkcs11" + the PKCS11_* vars (as a Secret, not here) once a real/soft HSM is reachable from the cluster
+  API_V1_STR: "/api/v1"
+  ESCALATION_TIMEOUT_MINUTES: "15"
+  NOTIFICATION_DEDUP_MINUTES: "30"
+  NOTIFICATION_RATE_LIMIT_PER_HOUR: "10"

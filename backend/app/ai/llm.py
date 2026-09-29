@@ -14,16 +14,22 @@ class LLMReasoner:
         self.url = f"{settings.OLLAMA_URL}/api/generate"
         self.model = settings.OLLAMA_MODEL
 
-    def ask_mapping(self, vendor: str, device_type: str, field_name: str, field_value: str, context: str) -> dict:
+    def ask_mapping(self, vendor: str, device_type: str, field_name: str, field_value: str, context: str, feedback: str = None) -> dict:
         canonical_fields = ", ".join(embedding_engine.canonical_fields)
-        
+
+        # Item 5 (agent refine loop): `feedback` carries real information
+        # about why a PREVIOUS attempt didn't work (e.g. a canonical field
+        # the pipeline still needs is missing), so a refine attempt is a
+        # genuinely different prompt, not a blind retry of the same question.
+        feedback_block = f"\n\nFeedback from a previous attempt: {feedback}\nReconsider this field with that feedback in mind.\n" if feedback else ""
+
         prompt = f"""
 You are a cybersecurity log parsing expert.
 A log from Vendor: {vendor}, Device: {device_type} has an unknown field.
 Field Name: "{field_name}"
 Example Value: "{field_value}"
 Context in log: "{context}"
-
+{feedback_block}
 Your task is to map this field to exactly ONE of the following canonical fields:
 [{canonical_fields}]
 
@@ -43,7 +49,7 @@ Do not include markdown blocks, do not include any other text, ONLY the JSON obj
         }
         
         try:
-            resp = requests.post(self.url, json=payload, timeout=15)
+            resp = requests.post(self.url, json=payload, timeout=settings.OLLAMA_TIMEOUT_SECONDS)
             resp.raise_for_status()
             data = resp.json()
             response_text = data.get("response", "")

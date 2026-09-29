@@ -1,0 +1,9 @@
+ts,uid,id.orig_h,id.orig_p,id.resp_h,id.resp_p,user,password,command,arg,mime_type,file_size,reply_code,reply_msg,data_channel.passive,data_channel.orig_h,data_channel.resp_h,data_channel.resp_p,fuid
+1348650776.436735,C2uA862O7mzi6nfKjd,192.168.9.10,1066,211.115.67.40,21,xia,<hidden>,PASV,,,,227,"Entering Passive Mode (211,115,67,40,14,102)",T,192.168.9.10,211.115.67.40,3686,
+1348650777.133162,C2uA862O7mzi6nfKjd,192.168.9.10,1066,211.115.67.40,21,xia,<hidden>,RETR,ftp://211.115.67.40/./XP SP2 (Build 2600) 32bit__alan-1fd4b27f5d/clark.ini,,,550,/XP SP2 (Build 2600) 32bit__alan-1fd4b27f5d/clark.ini: No such file or directory.,,,,,
+1348650788.838301,C2uA862O7mzi6nfKjd,192.168.9.10,1066,211.115.67.40,21,xia,<hidden>,PASV,,,,227,"Entering Passive Mode (211,115,67,40,14,119)",T,192.168.9.10,211.115.67.40,3703,
+1348650789.498746,C2uA862O7mzi6nfKjd,192.168.9.10,1066,211.115.67.40,21,xia,<hidden>,RETR,ftp://211.115.67.40/./XP SP2 (Build 2600) 32bit__alan-1fd4b27f5d/clark.ini,,,550,/XP SP2 (Build 2600) 32bit__alan-1fd4b27f5d/clark.ini: No such file or directory.,,,,,
+1348650799.972230,C2uA862O7mzi6nfKjd,192.168.9.10,1066,211.115.67.40,21,xia,<hidden>,PASV,,,,227,"Entering Passive Mode (211,115,67,40,14,134)",T,192.168.9.10,211.115.67.40,3718,
+1348650800.687486,C2uA862O7mzi6nfKjd,192.168.9.10,1066,211.115.67.40,21,xia,<hidden>,RETR,ftp://211.115.67.40/./XP SP2 (Build 2600) 32bit__alan-1fd4b27f5d/clark.ini,,,550,/XP SP2 (Build 2600) 32bit__alan-1fd4b27f5d/clark.ini: No such file or directory.,,,,,
+1348650811.612911,C2uA862O7mzi6nfKjd,192.168.9.10,1066,211.115.67.40,21,xia,<hidden>,PASV,,,,227,"Entering Passive Mode (211,115,67,40,14,148)",T,192.168.9.10,211.115.67.40,3732,
+1348650812.398758,C2uA862O7mzi6nfKjd,192.168.9.10,1066,211.115.67.40,21,xia,<hidden>,RETR,ftp://211.115.67.40/./XP SP2 (Build 2600) 32bit__alan-1fd4b27f5d/clark.ini,,,550,/XP SP2 (Build 2600) 32bit__alan-1fd4b27f5d/clark.ini: No such file or directory.,,,,,

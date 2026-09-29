@@ -89,7 +89,10 @@ services:
       - ulp-network
 
   redpanda:
-    image: docker.redpanda.com/vectorized/redpanda:latest
+    # Real bug found via the E10 kind smoke test: `vectorized/redpanda` is a
+    # retired org path (image pull fails with "not found"); the real current
+    # org is `redpandadata`, pinned rather than `:latest`.
+    image: docker.redpanda.com/redpandadata/redpanda:v26.2.3
     container_name: ulp-redpanda
     command:
       - redpanda
@@ -165,6 +168,49 @@ services:
       - ulp-network
     command: python -m app.workers.main
 
+  syslog-listener:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ulp-syslog-listener
+    env_file:
+      - .env
+    environment:
+      # Mutual TLS for the TCP collector path (ULPF-master-prompt.md Part D2:
+      # "so a rogue device cannot inject logs") -- opt-in. Generate the
+      # throwaway dev CA first (`bash deploy/dev-ca/generate.sh`, see
+      # docs/PKI.md), then set these three, and 6514 below requires a client
+      # cert signed by ca.crt; a device without one is rejected at the TLS
+      # handshake before any log content is read. Port 5514 (UDP+TCP) stays
+      # plaintext for UDP (which has no TLS handshake to protect) and for
+      # backward-compatible plaintext TCP senders.
+      - SYSLOG_TLS_CERT=${SYSLOG_TLS_CERT:-}
+      - SYSLOG_TLS_KEY=${SYSLOG_TLS_KEY:-}
+      - SYSLOG_TLS_CA=${SYSLOG_TLS_CA:-}
+    volumes:
+      - ./backend:/app
+      - ./deploy/dev-ca:/app/deploy/dev-ca:ro
+    ports:
+      - "5514:5514/udp"
+      - "5514:5514/tcp"
+      - "6514:6514/tcp"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ulp-network
+    # Runs two listener processes: 5514 always plaintext (UDP+TCP), 6514
+    # mTLS-only when SYSLOG_TLS_* are set (the process exits immediately on
+    # 6514 if they aren't -- see syslog_listener.py's argument validation --
+    # so this command only actually binds 6514 in the mTLS-enabled case).
+    command: >
+      sh -c "python -m app.workers.syslog_listener --host 0.0.0.0 --udp-port 5514 --tcp-port 5514 &
+             if [ -n \"$$SYSLOG_TLS_CERT\" ]; then
+               python -m app.workers.syslog_listener --host 0.0.0.0 --disable-udp --tcp-port 6514 \
+                 --tls-cert \"$$SYSLOG_TLS_CERT\" --tls-key \"$$SYSLOG_TLS_KEY\" --tls-ca \"$$SYSLOG_TLS_CA\" &
+             fi
+             wait"
+
   frontend:
     build:
       context: ./frontend
@@ -173,7 +219,7 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - VITE_API_URL=http://localhost:8000
+      - VITE_API_URL=http://localhost:8000/api/v1
     volumes:
       - ./frontend:/app
       - /app/node_modules

@@ -51,18 +51,23 @@ def approve_mapping(mapping_id: int, req: ApproveRequest, db: Session = Depends(
     mapping = db.query(MappingRegistry).filter(MappingRegistry.id == mapping_id).first()
     if not mapping:
         raise HTTPException(status_code=404, detail="Mapping not found")
-    
+    if current_user.role_name not in ("admin", "approver", "parser_author"):
+        raise HTTPException(status_code=403, detail="Insufficient role to approve a mapping")
+
     before = {"canonical_field": mapping.canonical_field, "approved": mapping.approved}
-    
+
     if req.canonical_field:
         mapping.canonical_field = req.canonical_field
     mapping.approved = True
-    mapping.approved_by = req.reviewer
+    # The reviewer identity is the authenticated actor, never the client-supplied
+    # `req.reviewer` string -- that field was previously trusted as-is, letting
+    # any authenticated caller attribute an approval to an arbitrary name.
+    mapping.approved_by = current_user.id
     mapping.updated_at = datetime.now(timezone.utc)
-    
+
     # Audit
     audit = AuditLog(
-        user=req.reviewer,
+        user=current_user.id,
         action="mapping_approved",
         entity_type="MappingRegistry",
         entity_id=str(mapping_id),
@@ -78,13 +83,15 @@ def reject_mapping(mapping_id: int, req: RejectRequest, db: Session = Depends(ge
     mapping = db.query(MappingRegistry).filter(MappingRegistry.id == mapping_id).first()
     if not mapping:
         raise HTTPException(status_code=404, detail="Mapping not found")
-    
+    if current_user.role_name not in ("admin", "approver", "parser_author"):
+        raise HTTPException(status_code=403, detail="Insufficient role to reject a mapping")
+
     before = {"canonical_field": mapping.canonical_field, "approved": mapping.approved}
     db.delete(mapping)
 
     # Audit
     audit = AuditLog(
-        user=req.reviewer,
+        user=current_user.id,
         action="mapping_rejected",
         entity_type="MappingRegistry",
         entity_id=str(mapping_id),

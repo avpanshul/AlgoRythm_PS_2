@@ -4,7 +4,12 @@ sqlalchemy==2.0.23
 alembic==1.12.1
 pydantic==2.5.2
 pydantic-settings==2.1.0
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.13
+# bumped from 2.9.9: that pin has no prebuilt wheel for Python 3.13, forcing
+# a from-source build that needs pg_config -- a real gap found while running
+# pip-audit locally for Part D11. Docker (python:3.11-slim) and CI
+# (python-version 3.11) were both unaffected either way; this just fixes it
+# for local dev on newer Python too.
 asyncpg==0.29.0
 minio==7.2.0
 opensearch-py==2.4.2
@@ -12,15 +17,50 @@ redis==5.0.1
 confluent-kafka==2.3.0
 drain3==0.9.11
 sentence-transformers==2.2.2
+numpy==2.2.6
+pandas==2.3.3
+# numpy/pandas were already transitive deps (via sentence-transformers) but
+# app/ai/triage_bandit.py (E7b) and scripts/validate_triage_bandit_guide.py
+# now import them directly, so they're pinned explicitly rather than left
+# implicit.
 ollama==0.1.3
-python-multipart==0.0.6
-PyJWT==2.8.0
+python-multipart==0.0.18
+# bumped from 0.0.6 (real pip-audit finding, Part D11): multiple real CVEs
+# fixed in later releases (PYSEC-2024-38 and others). 0.0.18 rather than the
+# newest 0.0.31+ -- a smaller, verified jump; tests pass against it (see
+# docs/HARDENING.md's dependency-audit section for the full finding and
+# what's still open).
+PyJWT==2.10.1
+# bumped from 2.8.0 (real pip-audit finding): fixes PYSEC-2026-120 and
+# others. This is the actual JWT library the app uses (app/core/security.py
+# does `import jwt`).
 passlib[bcrypt]==1.7.4
 # passlib 1.7.4's bcrypt backend probes bcrypt.__about__.__version__, which was
 # removed in bcrypt>=4.1 -- pin to a version that still has it, or hashing breaks
 # with "password cannot be longer than 72 bytes" on backend init.
 bcrypt==4.0.1
-python-jose[cryptography]==3.3.0
+# python-jose[cryptography]==3.3.0 -- REMOVED (Part D11 pip-audit found 2 real
+# CVEs in it; checking app/core/security.py confirmed it was never actually
+# imported anywhere -- PyJWT above is what this app's JWT handling really
+# uses. A leftover from an earlier auth implementation, not a live
+# dependency; removing it eliminates both CVEs and unnecessary attack
+# surface instead of patching a version nothing calls.
+cryptography==50.0.1
+# Real regression from the python-jose removal above, found running the E10
+# kind smoke test in a genuinely fresh container: python-jose's
+# [cryptography] extra was the ONLY thing installing this package, and
+# app/core/vault_encryption.py and app/integrity/signing.py both import it
+# directly (`from cryptography.fernet import Fernet`, checkpoint signing).
+# Local dev/CI never caught this because the already-installed environment
+# kept the package from before the D11 removal -- pip doesn't uninstall a
+# transitive dependency just because the line that pulled it in was
+# deleted. A fresh `pip install -r requirements.txt` in a clean Docker
+# image crashed on startup with `ModuleNotFoundError: No module named
+# 'cryptography'` in two security-critical modules. Now pinned directly.
 pytest==7.4.3
 requests==2.31.0
 httpx==0.25.2
+hypothesis==6.168.1
+python-pkcs11==0.10.0  # PKCS#11/HSM checkpoint signing backend (Part D3) -- see app/integrity/signing.py
+pyotp==2.9.0  # TOTP MFA (Part D1) -- app/core/security.py's generate/verify_totp
+rfc3161ng==2.1.3  # RFC 3161 trusted timestamping -- app/integrity/rfc3161.py

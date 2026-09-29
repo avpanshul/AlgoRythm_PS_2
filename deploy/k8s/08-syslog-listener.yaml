@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: syslog-listener
+  namespace: ulpf
+spec:
+  replicas: 1  # UDP load-balancing across replicas needs a Service with
+               # session affinity considerations this pass doesn't attempt;
+               # one replica is the honest, tested configuration.
+  selector:
+    matchLabels:
+      app: syslog-listener
+  template:
+    metadata:
+      labels:
+        app: syslog-listener
+    spec:
+      containers:
+        - name: syslog-listener
+          image: REGISTRY/ulpf-backend:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "app.workers.syslog_listener", "--host", "0.0.0.0", "--udp-port", "5514", "--tcp-port", "5514"]
+          ports:
+            - { containerPort: 5514, protocol: UDP }
+            - { containerPort: 5514, protocol: TCP }
+          envFrom:
+            - configMapRef: { name: ulpf-config }
+            - secretRef: { name: ulpf-secrets }
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: tmp
+              mountPath: /tmp
+            # mTLS collector cert material (Part D2) -- mount your real or
+            # dev-ca-generated (deploy/dev-ca/generate.sh) certs as a Secret
+            # named ulpf-syslog-tls and set SYSLOG_TLS_* in 01-configmap.yaml
+            # to enable the 6514 mTLS port; left disabled by default here
+            # (no such Secret is created by this manifest set) rather than
+            # mounting a Secret that doesn't exist.
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits: { cpu: "500m", memory: "512Mi" }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000  # see 06-backend.yaml's comment -- same image, same real fix
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true  # Part D12 -- see 06-backend.yaml's comment
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: backend-data
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: syslog-listener
+  namespace: ulpf
+spec:
+  selector:
+    app: syslog-listener
+  ports:
+    - { name: syslog-udp, port: 5514, targetPort: 5514, protocol: UDP }
+    - { name: syslog-tcp, port: 5514, targetPort: 5514, protocol: TCP }
+  type: LoadBalancer  # or NodePort if the target cluster has no external LB (true for a bare `kind` cluster)
+---
+# Unlike backend/postgres/redpanda, syslog-listener's ingress is
+# *deliberately* open at the network layer (no `from` restriction on
+# 5514) -- it's the collector-facing port real devices outside the cluster
+# must reach. The access control here is mTLS at the application layer
+# (Part D2, app/workers/syslog_listener.py's --tls-ca), not a NetworkPolicy
+# source restriction, which can't distinguish "a legitimate device" from
+# "a rogue one" the way a client-certificate check can.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: syslog-listener-network-policy
+  namespace: ulpf
+spec:
+  podSelector:
+    matchLabels:
+      app: syslog-listener
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - ports:
+        - { port: 5514, protocol: UDP }
+        - { port: 5514, protocol: TCP }
+        - { port: 6514, protocol: TCP }  # mTLS port, if enabled -- see the volumeMounts comment above
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app: postgres } }
+      ports: [{ port: 5432 }]
+    - to:
+        - namespaceSelector: {}
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }

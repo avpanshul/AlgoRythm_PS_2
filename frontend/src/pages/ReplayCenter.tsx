@@ -1,242 +1,314 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
-import { ShieldCheck, RotateCcw, AlertOctagon, UserCircle } from 'lucide-react'
+import { ShieldCheck, ShieldAlert, RotateCcw, Play, RefreshCw, Hash, Cpu, FileWarning, Search } from 'lucide-react'
+import { GlassCard } from '../components/glass/GlassCard'
 
-export default function IntegrityAndReplay() {
-  const [activeTab, setActiveTab] = useState('integrity')
-  const [verified, setVerified] = useState(false)
-  const [replayStarted, setReplayStarted] = useState(false)
-
-  const { data: replayJobs = [] } = useQuery({ queryKey: ['replayJobs'], queryFn: () => api.getReplayJobs() })
-  const { data: dlqEvents = { items: [], total: 0 } } = useQuery({ queryKey: ['dlq'], queryFn: () => api.getDlq() })
-  const { data: auditLogs = [] } = useQuery({ queryKey: ['auditLogs'], queryFn: () => api.getAuditLogs() })
-
-  const TABS = [
-    { id: 'integrity', label: 'Integrity verification', icon: ShieldCheck },
-    { id: 'replay', label: 'Replay & reprocessing', icon: RotateCcw },
-    { id: 'dlq', label: 'Dead-letter queue', icon: AlertOctagon },
-    { id: 'audit', label: 'Audit logs', icon: UserCircle },
-  ]
-
-  const tabBtn = (active: boolean): React.CSSProperties => ({
-    padding: '10px 4px',
-    marginRight: 20,
-    fontSize: 13,
-    fontWeight: active ? 600 : 500,
-    background: 'transparent',
-    color: active ? '#1a56db' : '#6b7280',
-    border: 'none',
-    borderBottom: active ? '2px solid #1a56db' : '2px solid transparent',
-    marginBottom: -1,
-    cursor: 'pointer',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
+export default function ReplayCenter() {
+  const qc = useQueryClient()
+  const [verifyId, setVerifyId] = useState('')
+  const [proofId, setProofId] = useState<string | null>(null)
+  
+  const { data: replayJobs } = useQuery({ queryKey: ['replayJobs'], queryFn: () => api.getReplayJobs() })
+  // status: 'failed' -- without it, /dlq's total counts every row ever
+  // written including already-resolved retries, wildly overstating current
+  // failures (see the same fix in FailedEvents.tsx for the full story).
+  const { data: dlqEvents = { items: [], total: 0 } } = useQuery({ queryKey: ['dlq', 'failed'], queryFn: () => api.getDlq({ status: 'failed' }) })
+  const [auditSearch, setAuditSearch] = useState('')
+  const { data: auditLogs } = useQuery({
+    queryKey: ['auditLogs', auditSearch],
+    queryFn: () => api.getAuditLogs(auditSearch ? { q: auditSearch } : undefined),
+    retry: false,
   })
+  const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.getCurrentUser, retry: false })
 
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case 'integrity':
-        return (
-          <div>
-            <div style={{ display: 'flex', gap: 32, padding: '4px 0 20px', marginBottom: 20, borderBottom: '1px solid #e5e7eb' }}>
-              {[
-                { label: 'Events verified today', value: '1,24,532' },
-                { label: 'Integrity failures', value: '0' },
-                { label: 'Batch Merkle trees', value: '127' },
-              ].map(s => (
-                <div key={s.label} style={{ minWidth: 160 }}>
-                  <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 2 }}>{s.label}</div>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: '#111928' }}>{s.value}</div>
-                </div>
-              ))}
+  const [isVerifying, setIsVerifying] = useState(false)
+  const [verifyResult, setVerifyResult] = useState<any>(null)
+  const [verifyError, setVerifyError] = useState<string | null>(null)
+  const [startingJob, setStartingJob] = useState(false)
+
+  const handleVerify = () => {
+    if (!verifyId.trim()) return
+    setIsVerifying(true)
+    setVerifyResult(null)
+    setVerifyError(null)
+    api.getEventProof(verifyId.trim())
+      .then(setVerifyResult)
+      .catch((e: any) => setVerifyError(e?.response?.data?.detail || e?.message || 'No Merkle proof found for this event ID.'))
+      .finally(() => setIsVerifying(false))
+  }
+
+  const startReplayJob = () => {
+    setStartingJob(true)
+    api.createReplayJob({ requested_by: me?.id || me?.email })
+      .then(() => qc.invalidateQueries({ queryKey: ['replayJobs'] }))
+      .finally(() => setStartingJob(false))
+  }
+
+  const runJobNow = (id: number) => {
+    api.runReplayJob(id).then(() => qc.invalidateQueries({ queryKey: ['replayJobs'] }))
+  }
+
+  const retryDlqEvent = (id: number) => {
+    api.retryDlq(id).then(() => qc.invalidateQueries({ queryKey: ['dlq'] }))
+  }
+
+  const jobs = replayJobs?.items || []
+  const logs = auditLogs?.items || []
+
+  return (
+    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <header style={{ 
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, 
+        position: 'sticky', top: 0, zIndex: 50, 
+        background: 'rgba(238, 242, 246, 0.9)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+        padding: '16px', margin: '-16px -16px 24px -16px', borderRadius: 12,
+        boxShadow: '0 4px 20px rgba(0,0,0,0.02)'
+      }}>
+        <div>
+          <h1 style={{ fontSize: 'clamp(40px, 4vw, 52px)', fontWeight: 800, color: '#0044A8', letterSpacing: '-0.03em', lineHeight: 1.1 }}>
+            Integrity & Replay
+          </h1>
+          <p style={{ fontSize: 'clamp(12px, 0.85vw, 13px)', color: '#8999b0', marginTop: 3 }}>
+            Verify log provenance, reprocess events, and manage dead-letter queues.
+          </p>
+        </div>
+      </header>
+
+      <div id="integrity" style={{ scrollMarginTop: 120 }}>
+        <h2 style={{ fontSize: 24, fontWeight: 800, color: '#0a0e27', marginBottom: 16 }}>Integrity Verification</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+          <GlassCard style={{ padding: 24 }}>
+            <h3 className="section-heading" style={{ marginBottom: 12 }}>Verify Event Integrity</h3>
+            <p style={{ fontSize: 13, color: '#5b6382', marginBottom: 24 }}>
+              Enter an event ID to fetch its Merkle inclusion proof and verify the raw event has not been tampered with.
+            </p>
+            <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
+              <input 
+                type="text" 
+                placeholder="evt_xxxx_xxxx" 
+                value={verifyId}
+                onChange={e => setVerifyId(e.target.value)}
+                style={{
+                  flex: 1, padding: '12px 16px', borderRadius: 10, border: '1px solid rgba(0,68,168,0.2)',
+                  background: 'rgba(255,255,255,0.7)', fontSize: 14, fontFamily: 'monospace', outline: 'none'
+                }}
+              />
+              <button 
+                onClick={handleVerify}
+                disabled={!verifyId || isVerifying}
+                style={{
+                  padding: '0 24px', borderRadius: 10, border: 'none',
+                  background: 'linear-gradient(135deg, #0044A8, #0088FF)',
+                  color: '#fff', fontWeight: 600, fontSize: 14, cursor: 'pointer',
+                  opacity: (!verifyId || isVerifying) ? 0.7 : 1
+                }}
+              >
+                {isVerifying ? 'Verifying...' : 'Verify'}
+              </button>
             </div>
-            <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 20 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Event integrity verification</h3>
-              <table className="glass-table">
-                <tbody>
-                  {[
-                    { label: 'Event ID', value: 'evt_92837492837492834' },
-                    { label: 'Computed Hash', value: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' },
-                    { label: 'Stored Hash', value: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' },
-                    { label: 'Batch ID', value: 'batch_100492' },
-                    { label: 'Merkle Root', value: '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92' },
-                  ].map(row => (
-                    <tr key={row.label}>
-                      <td style={{ fontSize: 13, color: '#6b7280', whiteSpace: 'nowrap', width: 140 }}>{row.label}</td>
-                      <td className="mono" style={{ fontSize: 11, wordBreak: 'break-all' }}>{row.value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div style={{ marginTop: 16 }}>
-                {verified ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <ShieldCheck size={18} color="#057a55" />
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: '#057a55' }}>Integrity verified</div>
-                      <div style={{ fontSize: 12, color: '#6b7280' }}>SHA-256 hash matches vault copy.</div>
+          </GlassCard>
+          
+          <GlassCard style={{ padding: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 300 }}>
+            {isVerifying ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+                <RefreshCw size={40} color="#0044A8" className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
+                <div style={{ fontSize: 14, color: '#0044A8', fontWeight: 600 }}>Fetching real Merkle proof...</div>
+              </div>
+            ) : verifyError ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, textAlign: 'center', padding: '0 16px' }}>
+                <ShieldAlert size={40} color="#c81e1e" />
+                <div style={{ fontSize: 14, color: '#0a0e27', fontWeight: 600 }}>Not Verified</div>
+                <div style={{ fontSize: 12, color: '#8999b0' }}>{verifyError}</div>
+              </div>
+            ) : verifyResult ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '100%' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                  <div style={{ width: 48, height: 48, borderRadius: '50%', background: verifyResult.included ? 'rgba(5,122,85,0.1)' : 'rgba(217,119,6,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {verifyResult.included ? <ShieldCheck size={24} color="#057a55" /> : <ShieldAlert size={24} color="#d97706" />}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: verifyResult.included ? '#057a55' : '#d97706' }}>
+                      {verifyResult.included ? 'Real Merkle Proof Found' : 'Not Yet in a Checkpoint'}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#8999b0' }}>
+                      {verifyResult.included ? "From this deployment's own checkpoint ledger." : (verifyResult.reason || 'This event has not been sealed into a signed checkpoint yet.')}
                     </div>
                   </div>
-                ) : (
-                  <button className="btn btn-primary" onClick={() => setVerified(true)}>
-                    <ShieldCheck size={14} /> Verify integrity
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )
-
-      case 'replay':
-        return (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 20 }}>
-            <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 20 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>Start reprocessing job</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
-                {[
-                  { label: 'Time range', placeholder: '2026-09-22 00:00 → 2026-09-23 00:00' },
-                  { label: 'Source', placeholder: 'FW-Delhi-01' },
-                  { label: 'Parser version', placeholder: 'v1.4.3 (Latest)' },
-                ].map(f => (
-                  <div key={f.label}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', marginBottom: 4 }}>{f.label}</div>
-                    <input type="text" className="glass-input" defaultValue={f.placeholder} />
-                  </div>
-                ))}
-              </div>
-              {replayStarted ? (
-                <div style={{ fontSize: 13 }}>
-                  <div style={{ fontWeight: 600, color: '#1a56db' }}>Replay job started</div>
-                  <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>Processing in the background. Check the jobs list for status.</div>
                 </div>
-              ) : (
-                <button className="btn btn-primary" onClick={() => setReplayStarted(true)}>
-                  <RotateCcw size={14} /> Start replay
-                </button>
-              )}
-            </div>
+                <pre style={{ background: 'rgba(0,68,168,0.03)', border: '1px solid rgba(0,68,168,0.1)', padding: 12, borderRadius: 8, fontSize: 11, fontFamily: 'monospace', color: '#0a0e27', wordBreak: 'break-all', whiteSpace: 'pre-wrap', margin: 0, maxHeight: 220, overflowY: 'auto' }}>
+                  {JSON.stringify(verifyResult, null, 2)}
+                </pre>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, opacity: 0.5 }}>
+                <Hash size={48} color="#0044A8" />
+                <div style={{ fontSize: 14, color: '#0a0e27', fontWeight: 600 }}>Awaiting Event ID</div>
+              </div>
+            )}
+          </GlassCard>
+        </div>
+      </div>
 
-            <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 20 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Recent replay jobs</h3>
-              <table className="glass-table">
-                <tbody>
-                  {replayJobs.map((job: any, i: number) => (
-                    <tr key={i}>
-                      <td>
-                        <div className="mono" style={{ fontSize: 12, fontWeight: 600 }}>Job #{job.id}</div>
-                        <div style={{ fontSize: 12, color: '#6b7280' }}>{job.total_events || 0} events · {new Date(job.created_at).toLocaleDateString()}</div>
-                      </td>
-                      <td style={{ textAlign: 'right' }}>
-                        <span className={`badge badge-${job.status === 'completed' ? 'success' : job.status === 'failed' ? 'danger' : 'warning'}`}>{job.status}</span>
-                      </td>
-                    </tr>
-                  ))}
-                  {replayJobs.length === 0 && <tr><td style={{ fontSize: 12, color: '#6b7280', textAlign: 'center' }}>No recent jobs</td></tr>}
-                </tbody>
-              </table>
-            </div>
+      <div id="replay" style={{ scrollMarginTop: 120 }}>
+        <h2 style={{ fontSize: 24, fontWeight: 800, color: '#0a0e27', marginBottom: 16 }}>Replay Jobs</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button onClick={startReplayJob} disabled={startingJob} style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 10,
+              background: 'linear-gradient(135deg, #0044A8, #0088FF)', border: 'none',
+              color: '#fff', fontWeight: 600, fontSize: 13, cursor: startingJob ? 'not-allowed' : 'pointer',
+              boxShadow: '0 4px 12px rgba(0,68,168,0.2)', opacity: startingJob ? 0.7 : 1,
+            }}>
+              <RotateCcw size={16} /> {startingJob ? 'Starting…' : 'Start Replay Job'}
+            </button>
           </div>
-        )
-
-      case 'dlq':
-        return (
-          <div>
-            <div style={{ display: 'flex', gap: 32, padding: '4px 0 20px', marginBottom: 20, borderBottom: '1px solid #e5e7eb' }}>
-              {[
-                { label: 'Total failed', value: dlqEvents.total.toLocaleString() },
-                { label: 'Unknown format', value: '0' },
-                { label: 'Schema validation', value: '0' },
-                { label: 'Parser errors', value: '0' },
-              ].map(s => (
-                <div key={s.label} style={{ minWidth: 120 }}>
-                  <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 2 }}>{s.label}</div>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: '#111928' }}>{s.value}</div>
-                </div>
-              ))}
-            </div>
-            <div className="glass-table-container">
-              <table className="glass-table">
-                <thead>
-                  <tr>
-                    <th>Failed Event ID</th>
-                    <th>Failure Reason</th>
-                    <th>Parser</th>
-                    <th>Timestamp</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dlqEvents.items.map((f: any, i: number) => (
-                    <tr key={i}>
-                      <td className="mono" style={{ fontSize: 11 }}>{f.event_id}</td>
-                      <td><span className="badge badge-danger">{f.failure_reason}</span></td>
-                      <td className="mono" style={{ fontSize: 12 }}>{f.parser_id || 'Unknown'}</td>
-                      <td style={{ color: '#6b7280', fontSize: 12 }}>{new Date(f.created_at).toLocaleString()}</td>
-                      <td>
-                        <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: 11 }} onClick={() => api.retryDlq(f.id)}>Retry</button>
-                      </td>
-                    </tr>
-                  ))}
-                  {dlqEvents.items.length === 0 && (
-                    <tr><td colSpan={5} style={{ textAlign: 'center', color: '#6b7280' }}>No failed events in DLQ</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )
-
-      case 'audit':
-        return (
-          <div className="glass-table-container">
-            <table className="glass-table">
+          <GlassCard style={{ padding: 0, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
               <thead>
-                <tr><th>Timestamp</th><th>User</th><th>Action</th><th>Entity</th><th>IP Address</th></tr>
+                <tr style={{ background: 'rgba(0,68,168,0.03)', borderBottom: '1px solid rgba(0,68,168,0.1)', color: '#5b6382' }}>
+                  <th style={{ padding: '16px', fontWeight: 600 }}>Job ID</th>
+                  <th style={{ padding: '16px', fontWeight: 600 }}>Target Source</th>
+                  <th style={{ padding: '16px', fontWeight: 600 }}>Progress</th>
+                  <th style={{ padding: '16px', fontWeight: 600 }}>Status</th>
+                  <th style={{ padding: '16px', fontWeight: 600, textAlign: 'right' }}>Actions</th>
+                </tr>
               </thead>
               <tbody>
-                {auditLogs.map((r: any, i: number) => (
-                  <tr key={i}>
-                    <td className="mono" style={{ fontSize: 12 }}>{new Date(r.timestamp).toLocaleString()}</td>
-                    <td style={{ fontWeight: 500 }}>{r.user_id}</td>
-                    <td><span className="badge badge-primary">{r.action}</span></td>
-                    <td className="mono" style={{ fontSize: 11 }}>{r.entity_id}</td>
-                    <td style={{ color: '#6b7280', fontSize: 12 }}>{r.ip_address}</td>
+                {jobs.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} style={{ padding: 32, textAlign: 'center', color: '#8999b0' }}>
+                      <Cpu size={32} color="#0044A8" style={{ opacity: 0.3, margin: '0 auto 12px' }} />
+                      No replay jobs history found.
+                    </td>
                   </tr>
-                ))}
-                {auditLogs.length === 0 && (
-                  <tr><td colSpan={5} style={{ textAlign: 'center', color: '#6b7280' }}>No audit logs found</td></tr>
+                ) : (
+                  jobs.map((job: any) => (
+                    <tr key={job.id} style={{ borderBottom: '1px solid rgba(0,68,168,0.05)' }}>
+                      <td style={{ padding: '16px', fontWeight: 600, color: '#0a0e27', fontFamily: 'monospace' }}>#{job.id}</td>
+                      <td style={{ padding: '16px', color: '#5b6382' }}>All Sources</td>
+                      <td style={{ padding: '16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <div style={{ flex: 1, height: 6, borderRadius: 3, background: 'rgba(0,68,168,0.1)', overflow: 'hidden' }}>
+                            <div style={{ width: `${(job.processed_events / Math.max(1, job.total_events)) * 100}%`, height: '100%', background: '#0044A8' }} />
+                          </div>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: '#0a0e27', width: 40 }}>
+                            {Math.round((job.processed_events / Math.max(1, job.total_events)) * 100)}%
+                          </span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '16px' }}>
+                        <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600, background: job.status === 'completed' ? 'rgba(5,122,85,0.1)' : 'rgba(217,119,6,0.1)', color: job.status === 'completed' ? '#057a55' : '#d97706', textTransform: 'uppercase' }}>
+                          {job.status}
+                        </span>
+                      </td>
+                      <td style={{ padding: '16px', textAlign: 'right' }}>
+                        {job.status === 'pending' && (
+                          <button onClick={() => runJobNow(job.id)} style={{ padding: '4px 12px', borderRadius: 6, background: '#0044A8', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>Run Now</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))
                 )}
               </tbody>
             </table>
+          </GlassCard>
+        </div>
+      </div>
+
+      <div id="dlq" style={{ scrollMarginTop: 120 }}>
+        <h2 style={{ fontSize: 24, fontWeight: 800, color: '#0a0e27', marginBottom: 16 }}>Dead Letter Queue (DLQ)</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <div style={{ display: 'flex', gap: 24 }}>
+            <GlassCard style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#5b6382', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Failed Events</div>
+              <div style={{ fontSize: 32, fontWeight: 700, color: '#c81e1e' }}>{dlqEvents.total.toLocaleString()}</div>
+            </GlassCard>
           </div>
-        )
-      default: return null
-    }
-  }
-
-  return (
-    <div className="animate-fade-in" style={{ paddingBottom: 40 }}>
-      <div style={{ marginBottom: 0, paddingBottom: 12, borderBottom: '1px solid #e5e7eb' }}>
-        <h1 className="page-title">Integrity & replay</h1>
-        <p className="page-subtitle" style={{ margin: 0 }}>Verify log provenance, reprocess events, manage dead-letter queues, and review audit trails</p>
+          <GlassCard style={{ padding: 0, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
+              <thead>
+                <tr style={{ background: 'rgba(0,68,168,0.03)', borderBottom: '1px solid rgba(0,68,168,0.1)', color: '#5b6382' }}>
+                  <th style={{ padding: '16px', fontWeight: 600 }}>Event ID</th>
+                  <th style={{ padding: '16px', fontWeight: 600 }}>Failure Reason</th>
+                  <th style={{ padding: '16px', fontWeight: 600 }}>Timestamp</th>
+                  <th style={{ padding: '16px', fontWeight: 600, textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dlqEvents.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} style={{ padding: 32, textAlign: 'center', color: '#8999b0' }}>
+                      <FileWarning size={32} color="#057a55" style={{ opacity: 0.5, margin: '0 auto 12px' }} />
+                      No failed events in DLQ. Everything is processing smoothly.
+                    </td>
+                  </tr>
+                ) : (
+                  dlqEvents.items.map((f: any, i: number) => (
+                    <tr key={i} style={{ borderBottom: '1px solid rgba(0,68,168,0.05)' }}>
+                      <td style={{ padding: '16px', fontWeight: 600, color: '#0a0e27', fontFamily: 'monospace' }}>{f.event_id}</td>
+                      <td style={{ padding: '16px' }}>
+                        <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600, background: 'rgba(200,30,30,0.1)', color: '#c81e1e' }}>
+                          {f.failure_reason}
+                        </span>
+                      </td>
+                      <td style={{ padding: '16px', color: '#5b6382' }}>{new Date(f.created_at).toLocaleString()}</td>
+                      <td style={{ padding: '16px', textAlign: 'right' }}>
+                        <button onClick={() => retryDlqEvent(f.id)} style={{ padding: '6px 12px', borderRadius: 6, background: 'transparent', border: '1px solid rgba(0,68,168,0.2)', color: '#0044A8', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Retry</button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </GlassCard>
+        </div>
       </div>
 
-      <div style={{ display: 'flex', borderBottom: '1px solid #e5e7eb', marginBottom: 20 }}>
-        {TABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => { setActiveTab(t.id); setVerified(false); setReplayStarted(false) }}
-            style={tabBtn(activeTab === t.id)}
-          >
-            <t.icon size={14} />
-            {t.label}
-          </button>
-        ))}
+      <div id="audit" style={{ scrollMarginTop: 120 }}>
+        <h2 style={{ fontSize: 24, fontWeight: 800, color: '#0a0e27', marginBottom: 16 }}>Audit Logs</h2>
+        <GlassCard style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: 16, borderBottom: '1px solid rgba(0,68,168,0.1)', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <Search size={16} color="#8999b0" />
+            <input
+              type="text" placeholder="Search audit logs..." value={auditSearch} onChange={e => setAuditSearch(e.target.value)}
+              style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 14, flex: 1, color: '#0a0e27' }}
+            />
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
+            <thead>
+              <tr style={{ background: 'rgba(0,68,168,0.03)', borderBottom: '1px solid rgba(0,68,168,0.1)', color: '#5b6382' }}>
+                <th style={{ padding: '16px', fontWeight: 600 }}>Timestamp</th>
+                <th style={{ padding: '16px', fontWeight: 600 }}>User</th>
+                <th style={{ padding: '16px', fontWeight: 600 }}>Action</th>
+                <th style={{ padding: '16px', fontWeight: 600 }}>Entity</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.length === 0 ? (
+                <tr>
+                  <td colSpan={4} style={{ padding: 32, textAlign: 'center', color: '#8999b0' }}>
+                    {auditSearch ? `No audit log entries match "${auditSearch}".` : 'No audit log entries yet.'}
+                  </td>
+                </tr>
+              ) : (
+                logs.map((r: any, i: number) => (
+                  <tr key={i} style={{ borderBottom: '1px solid rgba(0,68,168,0.05)' }}>
+                    <td style={{ padding: '16px', color: '#5b6382', fontFamily: 'monospace' }}>{r.timestamp ? new Date(r.timestamp).toLocaleString() : '—'}</td>
+                    <td style={{ padding: '16px', fontWeight: 600, color: '#0a0e27' }}>{r.user}</td>
+                    <td style={{ padding: '16px' }}>
+                      <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600, background: 'rgba(0,68,168,0.1)', color: '#0044A8' }}>
+                        {r.action}
+                      </span>
+                    </td>
+                    <td style={{ padding: '16px', color: '#0a0e27', fontFamily: 'monospace' }}>{r.entity_id}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+          </GlassCard>
       </div>
-
-      {renderTabContent()}
     </div>
   )
 }

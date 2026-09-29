@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: ulpf
+spec:
+  replicas: 2  # unlike backend, the async worker (app/workers/main.py) is a
+               # Kafka consumer group member -- safe to scale horizontally;
+               # Redpanda partitions the "raw-events" topic across them.
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: worker
+          image: REGISTRY/ulpf-backend:latest  # same image as backend, different command
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "app.workers.main"]
+          envFrom:
+            - configMapRef: { name: ulpf-config }
+            - secretRef: { name: ulpf-secrets }
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits: { cpu: "1", memory: "1Gi" }
+          # No liveness probe: no HTTP endpoint to check (it's a Kafka
+          # consumer, not a server), and the slim base image
+          # (backend/Dockerfile) doesn't ship `pgrep`/procps, so an
+          # exec-based process-existence check would itself fail and
+          # crash-loop the pod -- a probe that's wrong is worse than no
+          # probe. Kubernetes' restartPolicy already restarts the container
+          # if the Python process exits/crashes; that's the real liveness
+          # signal this workload has, honestly, without adding a heartbeat
+          # mechanism this pass didn't build.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000  # see 06-backend.yaml's comment -- same image, same real fix
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true  # Part D12 -- see 06-backend.yaml's comment
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: backend-data
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: worker-egress-restricted
+  namespace: ulpf
+spec:
+  podSelector:
+    matchLabels:
+      app: worker
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app: postgres } }
+      ports: [{ port: 5432 }]
+    - to:
+        - podSelector: { matchLabels: { app: redpanda } }
+      ports: [{ port: 9092 }]
+    - to:
+        - namespaceSelector: {}
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }

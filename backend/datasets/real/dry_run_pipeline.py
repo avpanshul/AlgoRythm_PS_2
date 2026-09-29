@@ -62,7 +62,7 @@ def main():
             normalized = normalize_parsed_data(parsed, fmt, raw_log)
             redacted_message, redacted_fields = redact_pii(normalized.get("message") or "")
             normalized["message"] = redacted_message
-            risk_score, risk_level = compute_risk_score(normalized["event_data"], normalized.get("source_ip"))
+            risk_score, risk_level, _risk_reasons = compute_risk_score(normalized["event_data"], normalized.get("source_ip"))
 
             filled = sum(1 for v in [
                 normalized["source_ip"], normalized["dest_ip"],

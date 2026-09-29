@@ -1,0 +1,13 @@
+# Baseline: deny all ingress and egress in the ulpf namespace by default.
+# Every specific allow needed (postgres<-backend/worker/syslog-listener,
+# redpanda<-backend/worker, DNS, etc.) is an explicit NetworkPolicy in the
+# other files -- this is what makes those allows meaningful rather than
+# redundant with an otherwise-open namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: ulpf
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]

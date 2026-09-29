@@ -1,98 +1,215 @@
 import { useState } from 'react'
-import { Search, Download } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '../api/client'
+import { GlassCard } from '../components/glass/GlassCard'
+import { HardDrive, Server, Database, Archive, Settings2, Clock, Search } from 'lucide-react'
 
-const MOCK_VAULT = [
-  { refId: 'raw-abc123', timestamp: '2026-09-23T12:00:00Z', source: 'SRC-001 (Firewall)', size: '240 B', hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' },
-  { refId: 'raw-def456', timestamp: '2026-09-23T12:01:15Z', source: 'SRC-003 (Web Nginx)', size: '1.2 KB', hash: '8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4' },
-  { refId: 'raw-ghi789', timestamp: '2026-09-23T12:05:10Z', source: 'SRC-006 (Proxy)', size: '512 B', hash: 'a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3' },
-]
+function formatBytes(bytes: number | undefined | null): string {
+  if (bytes == null) return '—'
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let v = bytes, i = -1
+  do { v /= 1024; i++ } while (v >= 1024 && i < units.length - 1)
+  return `${v.toFixed(1)} ${units[i]}`
+}
 
 export default function RawVault() {
-  const [q, setQ] = useState('')
-  const [selectedRef, setSelectedRef] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState('overview')
 
-  const filtered = MOCK_VAULT.filter(v => v.refId.toLowerCase().includes(q.toLowerCase()) || v.hash.toLowerCase().includes(q.toLowerCase()))
-  const selected = filtered.find(v => v.refId === selectedRef) || null
+  // Real /storage/summary data -- this deployment's actual local vault
+  // (filesystem-backed raw log storage + SQLite/Postgres tables), not the
+  // S3/Elastic/Glacier/Neo4j stack this page previously described, none of
+  // which exists in this system.
+  // Real bug found live: `retry: false` meant a single transient failure
+  // (e.g. the backend mid-restart) left this page silently stuck showing
+  // "—"/empty forever, with no visible error and no way to recover short of
+  // a full page reload. A real backend hiccup should be visible and
+  // recoverable, not indistinguishable from "this system has no data."
+  const { data: summary, isLoading, isError, refetch, isFetching } = useQuery({
+    queryKey: ['storage-summary'], queryFn: () => api.getStorageSummary(), retry: 2, retryDelay: 1000,
+  })
+
+  const storageNodes = summary ? [
+    { name: 'Raw log vault (local filesystem)', status: 'Healthy', type: 'Raw Storage', size: formatBytes(summary.raw_storage_size_bytes), count: `${(summary.raw_event_count ?? 0).toLocaleString()} objects` },
+    { name: 'Normalized event store', status: 'Healthy', type: 'Normalized Storage', size: formatBytes(summary.normalized_storage_size_bytes), count: `${(summary.normalized_event_count ?? 0).toLocaleString()} events` },
+    { name: 'Event metadata table', status: 'Healthy', type: 'Metadata', size: '—', count: `${(summary.metadata_count ?? 0).toLocaleString()} rows` },
+  ] : []
 
   return (
-    <div style={{ paddingBottom: 40 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 20, paddingBottom: 12, borderBottom: '1px solid #e5e7eb' }}>
+    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h1 className="page-title">Raw log vault <span className="badge badge-neutral" style={{ marginLeft: 8, verticalAlign: 'middle' }}>Cold storage</span></h1>
-          <p className="page-subtitle" style={{ margin: 0 }}>Immutable store of original logs. Each parsed event links back here by reference ID.</p>
+          <h1 style={{ fontSize: 'clamp(40px, 4vw, 52px)', fontWeight: 800, color: '#0044A8', letterSpacing: '-0.03em', lineHeight: 1.1 }}>
+            Storage Architecture
+          </h1>
+          <p style={{ fontSize: 'clamp(12px, 0.85vw, 13px)', color: '#8999b0', marginTop: 3 }}>
+            Manage raw logs, normalized indexes, and long-term retention policies.
+          </p>
         </div>
-        <button className="btn btn-secondary">
-          <Download size={14} /> Export audit log
-        </button>
-      </div>
-
-      <div style={{ position: 'relative', maxWidth: 600, marginBottom: 12 }}>
-        <Search size={15} color="#6b7280" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
-        <input
-          className="glass-input mono"
-          placeholder="Search by reference ID or SHA-256 hash..."
-          value={q}
-          onChange={e => setQ(e.target.value)}
-          style={{ paddingLeft: 36 }}
-        />
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 340px' : '1fr', gap: 20, alignItems: 'flex-start' }}>
-        <div className="glass-table-container">
-          <table className="glass-table">
-            <thead>
-              <tr>
-                <th>Reference ID</th>
-                <th>Ingestion Time</th>
-                <th>Source</th>
-                <th>Size</th>
-                <th>Integrity Hash</th>
-                <th style={{ textAlign: 'right' }}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(v => (
-                <tr key={v.refId} onClick={() => setSelectedRef(v.refId)} style={{ cursor: 'pointer' }}>
-                  <td className="mono" style={{ fontWeight: 600 }}>{v.refId}</td>
-                  <td className="mono" style={{ fontSize: 11 }}>{new Date(v.timestamp).toLocaleString()}</td>
-                  <td style={{ fontSize: 12 }}>{v.source}</td>
-                  <td style={{ fontSize: 12, color: '#6b7280' }}>{v.size}</td>
-                  <td className="mono" style={{ fontSize: 11, color: '#6b7280', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis' }} title={v.hash}>{v.hash}</td>
-                  <td style={{ textAlign: 'right' }}>
-                    <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: 11 }}>View</button>
-                  </td>
-                </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>No records found matching search query.</td></tr>
-              )}
-            </tbody>
-          </table>
+        <div style={{ display: 'flex', gap: 8, background: 'rgba(0,68,168,0.05)', padding: 4, borderRadius: 12 }}>
+          <button 
+            onClick={() => setActiveTab('overview')}
+            style={{ 
+              padding: '6px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+              background: activeTab === 'overview' ? '#fff' : 'transparent',
+              color: activeTab === 'overview' ? '#0044A8' : '#5b6382',
+              boxShadow: activeTab === 'overview' ? '0 2px 8px rgba(0,68,168,0.1)' : 'none', transition: 'all 0.2s'
+            }}>
+            Overview
+          </button>
+          <button 
+            onClick={() => setActiveTab('retention')}
+            style={{ 
+              padding: '6px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+              background: activeTab === 'retention' ? '#fff' : 'transparent',
+              color: activeTab === 'retention' ? '#0044A8' : '#5b6382',
+              boxShadow: activeTab === 'retention' ? '0 2px 8px rgba(0,68,168,0.1)' : 'none', transition: 'all 0.2s'
+            }}>
+            Retention Policies
+          </button>
         </div>
+      </header>
 
-        {selected && (
-          <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 600 }}>Vault record</h3>
-              <button className="btn btn-ghost" onClick={() => setSelectedRef(null)} style={{ padding: '2px 8px', fontSize: 12 }}>Close</button>
+      {isError && (
+        <GlassCard style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderRadius: 16, background: 'rgba(200,30,30,0.06)', border: '1px solid rgba(200,30,30,0.2)' }}>
+          <span style={{ fontSize: 13, color: '#c81e1e', fontWeight: 600 }}>Could not reach the backend for storage stats -- this is a real connectivity error, not empty data.</span>
+          <button onClick={() => refetch()} disabled={isFetching} style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid rgba(200,30,30,0.3)', background: '#fff', color: '#c81e1e', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
+            {isFetching ? 'Retrying…' : 'Retry'}
+          </button>
+        </GlassCard>
+      )}
+
+      {activeTab === 'overview' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          {/* Top KPI Cards */}
+          <GlassCard style={{ display: 'flex', alignItems: 'center', padding: '24px 40px', marginBottom: 24, borderRadius: 32 }}>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 16 }}>
+              <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(0,68,168,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <HardDrive size={24} color="#0044A8" />
+              </div>
+              <div>
+                <div style={{ fontSize: 13, color: '#8999b0', fontWeight: 500, marginBottom: 4 }}>Raw Vault Size</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: '#0a0e27', lineHeight: 1 }}>{formatBytes(summary?.raw_storage_size_bytes)}</div>
+                <div style={{ fontSize: 12, color: '#8999b0', fontWeight: 600, marginTop: 6 }}>Current, real</div>
+              </div>
             </div>
-            <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 2 }}>Reference ID</div>
-            <div className="mono" style={{ fontSize: 14, marginBottom: 12 }}>{selected.refId}</div>
-            <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 2 }}>SHA-256</div>
-            <div className="mono" style={{ fontSize: 12, wordBreak: 'break-all', marginBottom: 12, color: '#057a55' }}>{selected.hash}</div>
-            <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 4 }}>Original payload</div>
-            <pre className="code-block" style={{ marginBottom: 12 }}>
-              {selected.refId === 'raw-abc123'
-                ? 'Sep 23 12:00:00 gateway-01 sshd[14512]: Failed password for admin from 203.0.113.15 port 48125 ssh2'
-                : '{"time":"2026-09-23T12:01:15Z", "src":"192.168.1.5", "action":"DENY"}'}
-            </pre>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#057a55', marginBottom: 12 }}>Block confirmed (tamper-proof)</div>
-            <button className="btn btn-secondary" style={{ width: '100%' }}>
-              <Download size={14} /> Download evidence (.zip)
-            </button>
+
+            <div style={{ width: 1, height: 64, background: 'rgba(0,68,168,0.1)', margin: '0 24px' }} />
+
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 16 }}>
+              <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(5,122,85,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Server size={24} color="#057a55" />
+              </div>
+              <div>
+                <div style={{ fontSize: 13, color: '#8999b0', fontWeight: 500, marginBottom: 4 }}>Normalized Store Size</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: '#0a0e27', lineHeight: 1 }}>{formatBytes(summary?.normalized_storage_size_bytes)}</div>
+                <div style={{ fontSize: 12, color: '#0044A8', fontWeight: 600, marginTop: 6 }}>Current, real</div>
+              </div>
+            </div>
+
+            <div style={{ width: 1, height: 64, background: 'rgba(0,68,168,0.1)', margin: '0 24px' }} />
+
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 16 }}>
+              <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(217,119,6,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Archive size={24} color="#d97706" />
+              </div>
+              <div>
+                <div style={{ fontSize: 13, color: '#8999b0', fontWeight: 500, marginBottom: 4 }}>Raw Events Stored</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: '#0a0e27', lineHeight: 1 }}>{(summary?.raw_event_count ?? 0).toLocaleString()}</div>
+                <div style={{ fontSize: 12, color: '#057a55', fontWeight: 600, marginTop: 6 }}>Real count</div>
+              </div>
+            </div>
+          </GlassCard>
+
+          <GlassCard style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid rgba(0,68,168,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h3 className="section-heading">Storage Nodes & Repositories</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Search size={16} color="#8999b0" />
+                <input type="text" placeholder="Search repositories..." style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 14 }} />
+              </div>
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
+              <thead>
+                <tr style={{ background: 'rgba(0,68,168,0.03)', borderBottom: '1px solid rgba(0,68,168,0.1)', color: '#5b6382' }}>
+                  <th style={{ padding: '16px', fontWeight: 600 }}>Repository Name</th>
+                  <th style={{ padding: '16px', fontWeight: 600 }}>Type</th>
+                  <th style={{ padding: '16px', fontWeight: 600 }}>Status</th>
+                  <th style={{ padding: '16px', fontWeight: 600 }}>Total Size</th>
+                  <th style={{ padding: '16px', fontWeight: 600 }}>Object Count</th>
+                  <th style={{ padding: '16px', fontWeight: 600, textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {storageNodes.map((node, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid rgba(0,68,168,0.05)' }}>
+                    <td style={{ padding: '16px', fontWeight: 600, color: '#0a0e27' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <Database size={16} color="#0044A8" /> {node.name}
+                      </div>
+                    </td>
+                    <td style={{ padding: '16px', color: '#5b6382' }}>{node.type}</td>
+                    <td style={{ padding: '16px' }}>
+                      <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600, background: node.status === 'Healthy' ? 'rgba(5,122,85,0.1)' : 'rgba(217,119,6,0.1)', color: node.status === 'Healthy' ? '#057a55' : '#d97706' }}>
+                        {node.status}
+                      </span>
+                    </td>
+                    <td style={{ padding: '16px', color: '#0a0e27', fontWeight: 600 }}>{node.size}</td>
+                    <td style={{ padding: '16px', color: '#5b6382' }}>{node.count}</td>
+                    <td style={{ padding: '16px', textAlign: 'right' }}>
+                      <button style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#8999b0' }}>
+                        <Settings2 size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {isLoading && (
+                  <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: '#8999b0' }}>Loading real storage stats…</td></tr>
+                )}
+                {!isLoading && !isError && storageNodes.length === 0 && (
+                  <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: '#8999b0' }}>No storage summary available yet.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </GlassCard>
+        </div>
+      ) : (
+        <RetentionTab />
+      )}
+    </div>
+  )
+}
+
+function RetentionTab() {
+  const { data: policies } = useQuery({ queryKey: ['retention-policies'], queryFn: () => api.getRetentionPolicies(), retry: false })
+  const list = Array.isArray(policies) ? policies : []
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <GlassCard style={{ padding: 24 }}>
+        <h3 className="section-heading" style={{ marginBottom: 20 }}>Real Retention Policies (per source)</h3>
+        <p style={{ fontSize: 14, color: '#5b6382', marginBottom: 24 }}>
+          How long each real source's events are kept before deletion (legal holds block deletion regardless of these values -- see app/core/retention.py).
+        </p>
+        {list.length === 0 ? (
+          <div style={{ padding: 24, textAlign: 'center', color: '#8999b0', fontSize: 13 }}>No retention policies configured yet.</div>
+        ) : (
+          <div style={{ display: 'grid', gap: 16 }}>
+            {list.map((p: any) => (
+              <div key={p.source_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 16, background: 'rgba(0,68,168,0.02)', border: '1px solid rgba(0,68,168,0.05)', borderRadius: 12 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#0a0e27', marginBottom: 4 }}>{p.source_id}</div>
+                  <div style={{ fontSize: 12, color: p.enabled ? '#057a55' : '#8999b0' }}>{p.enabled ? 'Enabled' : 'Disabled'}</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Clock size={16} color="#5b6382" />
+                  <span style={{ fontSize: 14, fontWeight: 600, color: '#0044A8' }}>{p.retention_days} days</span>
+                </div>
+              </div>
+            ))}
           </div>
         )}
-      </div>
+      </GlassCard>
     </div>
   )
 }

@@ -1,112 +1,76 @@
 import { useState } from 'react'
-import { Save, UploadCloud, Play, Code, Check } from 'lucide-react'
-
-const MOCK_RAW = `Sep 23 12:00:00 gateway-01 sshd[14512]: Failed password for admin from 203.0.113.15 port 48125 ssh2`
-const MOCK_CONF = `name: linux-auth-syslog-parser
-version: 1.0.6
-format: regex
-pattern: '^(?P<timestamp>\\w{3}\\s+\\d+\\s+\\d+:\\d+:\\d+)\\s+(?P<host>[\\w-]+)\\s+(?P<process>[\\w]+)\\[(?P<pid>\\d+)\\]:\\s+(?P<message>.*)$'
-mappings:
-  - raw: host
-    canonical: host.name
-  - raw: process
-    canonical: event.provider
-  - custom_eval:
-      if: message contains "Failed password"
-      set:
-        event.action: "login_failed"
-        event.outcome: "failure"
-`
-const MOCK_PREVIEW = {
-  "host.name": "gateway-01",
-  "event.provider": "sshd",
-  "event.action": "login_failed",
-  "event.outcome": "failure",
-  "timestamp": "Sep 23 12:00:00"
-}
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Check, X } from 'lucide-react'
+import { api } from '../api/client'
+import { anonymizedVendorLabel } from '../utils/anonymize'
 
 export default function MappingReview() {
-  const [config, setConfig] = useState(MOCK_CONF)
-  const [tested, setTested] = useState(false)
+  const qc = useQueryClient()
+  const [reviewer, setReviewer] = useState('admin')
 
-  const paneHead: React.CSSProperties = { padding: '10px 16px', borderBottom: '1px solid #e5e7eb', background: '#f7f8fa', fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }
+  const { data: mappings, isLoading, isError } = useQuery({
+    queryKey: ['mappings', 'needs-review'],
+    queryFn: () => api.getMappings({ needs_review: true }),
+    retry: false,
+  })
+
+  const list: any[] = Array.isArray(mappings) ? mappings : []
+
+  const approve = (id: number) => api.approveMapping(id, { reviewer }).then(() => qc.invalidateQueries({ queryKey: ['mappings', 'needs-review'] }))
+  const reject = (id: number) => api.rejectMapping(id, { reviewer, reason: 'rejected via Mapping Review' }).then(() => qc.invalidateQueries({ queryKey: ['mappings', 'needs-review'] }))
 
   return (
     <div style={{ paddingBottom: 40 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 20, paddingBottom: 12, borderBottom: '1px solid #e5e7eb' }}>
-        <div>
-          <h1 className="page-title">Parser studio <span className="badge badge-warning" style={{ marginLeft: 8, verticalAlign: 'middle' }}>Draft</span></h1>
-          <p className="page-subtitle" style={{ margin: 0 }}>Human-in-the-loop parser development. Review AI-suggested mappings and publish plugins.</p>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary">
-            <Save size={14} /> Save draft
-          </button>
-          <button className="btn btn-primary">
-            <UploadCloud size={14} /> Publish v1.0.6
-          </button>
-        </div>
+      <div style={{ marginBottom: 20, paddingBottom: 12, borderBottom: '1px solid #e5e7eb' }}>
+        <h1 className="page-title">Mapping review</h1>
+        <p className="page-subtitle" style={{ margin: 0 }}>
+          Field-level mappings suggested by the semantic/LLM fallback (see <code>app/services/mapping_service.py</code>) --
+          nothing here is auto-approved. Approve to add a mapping to the registry, reject to discard it.
+        </p>
       </div>
 
-      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-        <div style={{ flex: 1, border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden' }}>
-          <div style={paneHead}>
-            <span>1. Raw sample</span>
-            <button className="btn btn-ghost" style={{ fontSize: 11, padding: '2px 8px' }}>Load new sample</button>
-          </div>
-          <textarea
-            className="glass-input mono"
-            style={{ border: 'none', borderRadius: 0, resize: 'vertical', fontSize: 12, padding: 16, minHeight: 320 }}
-            defaultValue={MOCK_RAW}
-          />
-        </div>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center' }}>
+        <span style={{ fontSize: 12, color: '#6b7280' }}>Reviewing as:</span>
+        <input className="glass-input" style={{ width: 160 }} value={reviewer} onChange={e => setReviewer(e.target.value)} />
+      </div>
 
-        <div style={{ flex: 1.5, border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden' }}>
-          <div style={paneHead}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Code size={14} /> 2. Parser configuration (YAML)
-            </span>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', textTransform: 'none' }}>
-              <span style={{ fontSize: 11, color: '#057a55', display: 'flex', alignItems: 'center', gap: 4 }}><Check size={12} /> AI suggestions applied</span>
-              <button className="btn btn-primary" onClick={() => setTested(true)} style={{ fontSize: 11, padding: '4px 10px' }}>
-                <Play size={12} /> Test parser
-              </button>
-            </div>
-          </div>
-          <textarea
-            className="glass-input mono"
-            style={{ border: 'none', borderRadius: 0, resize: 'vertical', fontSize: 12, padding: 16, minHeight: 320 }}
-            value={config}
-            onChange={e => setConfig(e.target.value)}
-          />
-        </div>
-
-        <div style={{ flex: 1, border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden' }}>
-          <div style={paneHead}>
-            <span>3. Normalized preview</span>
-          </div>
-          {tested ? (
-            <div>
-              <div style={{ padding: 12, borderBottom: '1px solid #e5e7eb', display: 'flex', gap: 16 }}>
-                <div>
-                  <div style={{ fontSize: 10, color: '#057a55', textTransform: 'uppercase' }}>Schema validation</div>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>Passed</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 10, color: '#6b7280', textTransform: 'uppercase' }}>Data quality</div>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>98/100</div>
-                </div>
-              </div>
-              <pre className="code-block" style={{ border: 'none', borderRadius: 0, fontSize: 12 }}>
-                {JSON.stringify(MOCK_PREVIEW, null, 2)}
-              </pre>
-            </div>
-          ) : (
-            <div style={{ padding: 40, textAlign: 'center', color: '#6b7280', fontSize: 13 }}>
-              Click "Test parser" to generate preview.
-            </div>
-          )}
-        </div>
+      <div className="glass-table-container">
+        <table className="glass-table">
+          <thead>
+            <tr>
+              <th>Vendor</th>
+              <th>Raw field</th>
+              <th>Suggested canonical field</th>
+              <th>Method</th>
+              <th>Confidence</th>
+              <th style={{ textAlign: 'right' }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((m: any) => (
+              <tr key={m.id}>
+                <td style={{ fontSize: 12 }}>{m.vendor ? anonymizedVendorLabel(m.vendor) : 'Generic'}{m.device_type ? ` / ${m.device_type}` : ''}</td>
+                <td className="mono" style={{ fontSize: 12 }}>{m.raw_field}</td>
+                <td className="mono" style={{ fontSize: 12, color: '#1a56db' }}>{m.canonical_field}</td>
+                <td><span className="badge badge-neutral">{m.mapping_type}</span></td>
+                <td className="mono" style={{ fontSize: 12, fontWeight: 600, color: m.confidence >= 0.9 ? '#057a55' : '#c27803' }}>{Math.round(m.confidence * 100)}%</td>
+                <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  <button className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: 11, marginRight: 6 }} onClick={() => approve(m.id)}>
+                    <Check size={12} /> Approve
+                  </button>
+                  <button className="btn btn-ghost" style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => reject(m.id)}>
+                    <X size={12} color="#c81e1e" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {isLoading && <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>Loading…</td></tr>}
+            {isError && <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#c81e1e' }}>Could not reach the backend.</td></tr>}
+            {!isLoading && !isError && list.length === 0 && (
+              <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>No field mappings awaiting review.</td></tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   )

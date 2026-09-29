@@ -25,7 +25,7 @@ export default function LiveEvents() {
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
           <Zap size={22} color="#f59e0b" />
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-text-primary)' }}>Live Event Ingestion</h1>
+          <h1 style={{ fontSize: 44, fontWeight: 700, color: 'var(--color-text-primary)' }}>Live Event Ingestion</h1>
         </div>
         <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
           Submit a raw log directly to the pipeline. The event will travel through format detection, parsing, normalization, and risk scoring.

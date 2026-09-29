@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ulpf
+resources:
+  - 00-namespace.yaml
+  - 01-configmap.yaml
+  # 02-secret.yaml is intentionally NOT listed here -- it's your real,
+  # filled-in, gitignored copy of 02-secret.example.yaml. Apply it
+  # separately: `kubectl apply -f deploy/k8s/02-secret.yaml` before running
+  # `kubectl apply -k deploy/k8s/`.
+  - 03-postgres.yaml
+  - 04-redpanda.yaml
+  - 05-shared-storage.yaml
+  - 06-backend.yaml
+  - 07-worker.yaml
+  - 08-syslog-listener.yaml
+  - 09-default-deny.yaml
+
+# Air-gapped registry substitution (Part D2/E10's "no external registry at
+# deploy" requirement): every image in these manifests is `REGISTRY/...` --
+# this default here still points nowhere real; override it for your actual
+# internal registry, e.g.:
+#   kustomize edit set image REGISTRY/ulpf-backend=registry.internal.example/ulpf-backend:v1.2.3
+# or run `kubectl apply -k deploy/k8s/` after editing this images: block
+# directly.
+images:
+  - name: REGISTRY/ulpf-backend
+    newName: ulpf-backend
+    newTag: dev

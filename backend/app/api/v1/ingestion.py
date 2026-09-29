@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.local_storage import save_raw_log
 from app.core.processing import process_raw_event
@@ -42,10 +43,25 @@ def process_single_log(db: Session, raw_log: str, source_id: str, protocol: str)
     db.add(metadata)
     db.commit()
     db.refresh(metadata)
-    
-    # Run full processing pipeline synchronously for the demo
-    process_raw_event(db, event_id, raw_log, source_id, raw_sha256, raw_location)
-    
+
+    if settings.INGEST_BACKEND == "kafka":
+        # Async path (ULPF-phase2-prompt.md E5): raw bytes are already
+        # hashed and vaulted above -- only normalization/scoring/Merkle-append
+        # is deferred to app/workers/main.py, which calls the same
+        # process_raw_event() used here. Lazy-imported: confluent_kafka needs
+        # librdkafka, which isn't installed in the default "sync" dev/demo
+        # environment, and must never be required just to import this router.
+        from app.core.messaging import get_kafka_producer, produce_event
+        producer = get_kafka_producer()
+        produce_event(producer, "raw-events", key=event_id, value={
+            "event_id": event_id, "source_id": source_id,
+            "raw_sha256": raw_sha256, "raw_location": raw_location,
+        })
+        producer.flush(timeout=5)
+    else:
+        # Default: run the full processing pipeline synchronously.
+        process_raw_event(db, event_id, raw_log, source_id, raw_sha256, raw_location)
+
     db.refresh(metadata)
     return metadata
 
@@ -77,3 +93,25 @@ async def ingest_syslog_raw(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Empty payload")
 
     return process_single_log(db, raw_log, "UNKNOWN", "syslog-http")
+
+
+@router.post("/ingest/windows-event-log", response_model=RawEventResponse)
+async def ingest_windows_event_log(request: Request, db: Session = Depends(get_db)):
+    """Accepts Windows Event Log XML (as exported by wecutil/PowerShell
+    Get-WinEvent -Xml, or forwarded by WEC) through the same raw-capture ->
+    format-detect -> XML-parse path used for everything else -- syslog and
+    Windows Event Log share one ingestion pipeline rather than separate ones."""
+    body_bytes = await request.body()
+    if len(body_bytes) > MAX_SINGLE_LOG_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Payload too large (max {MAX_SINGLE_LOG_BYTES} bytes)",
+        )
+    try:
+        raw_log = body_bytes.decode('utf-8').strip()
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="Payload must be valid UTF-8 text")
+    if not raw_log:
+        raise HTTPException(status_code=400, detail="Empty payload")
+
+    return process_single_log(db, raw_log, "UNKNOWN", "windows-event-log")

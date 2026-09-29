@@ -1,0 +1,7 @@
+ts,uid,id.orig_h,id.orig_p,id.resp_h,id.resp_p,nick,user,command,value,addl,dcc_file_name,dcc_file_size,dcc_mime_type,fuid
+1332696120.549203,C2PYIk2JRni1tciePi,192.168.103.10,1043,174.140.168.192,107,,,NICK,n{Ganja-USA|XP}037894,,,,,
+1332696120.549203,C2PYIk2JRni1tciePi,192.168.103.10,1043,174.140.168.192,107,n{Ganja-USA|XP}037894,,USER,0378,""""" ""TsGh"" 0378",,,,
+1332696120.577238,C2PYIk2JRni1tciePi,192.168.103.10,1043,174.140.168.192,107,n{Ganja-USA|XP}037894,0378,JOIN,##Jasmine##,(empty),,,,
+1359602211.799219,CdbJV826r6WgbJUSX,192.168.104.10,1057,173.192.216.118,31902,,,NICK,[USA|XP|sgwcnxt],,,,,
+1359602211.799219,CdbJV826r6WgbJUSX,192.168.104.10,1057,173.192.216.118,31902,[USA|XP|sgwcnxt],,USER,mzcaoqtnmp,""""" ""lol"" mzcaoqtnmp",,,,
+1359602211.998483,CdbJV826r6WgbJUSX,192.168.104.10,1057,173.192.216.118,31902,[USA|XP|sgwcnxt],mzcaoqtnmp,JOIN,#BrEnK, with channel key: 'lorzo819383',,,,

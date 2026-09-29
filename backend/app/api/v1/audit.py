@@ -3,9 +3,18 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from typing import Optional
 from app.core.database import get_db
-from app.models.all import AuditLog
+from app.models.all import AuditLog, verify_audit_chain
 
 router = APIRouter()
+
+
+@router.get("/audit-logs/verify")
+def verify_audit_logs(db: Session = Depends(get_db)):
+    """Re-walks the tamper-evident hash chain (see AuditLog's before_insert
+    listener in app/models/all.py) and reports the first broken link, if
+    any -- the scheduled self-verification job this endpoint backs is what
+    makes "tamper-evident" a checked claim rather than an assumed one."""
+    return verify_audit_chain(db)
 
 @router.get("/audit-logs")
 def list_audit_logs(

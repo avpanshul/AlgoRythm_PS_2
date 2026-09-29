@@ -9,3 +9,19 @@ backend/data/
 *.log
 !backend/datasets/real/**/*.log
 datasets/raw/
+
+# Throwaway dev CA material (deploy/dev-ca/generate.sh regenerates all of
+# this) -- never commit private key material, even for a dev-only CA.
+deploy/dev-ca/*.key
+deploy/dev-ca/*.crt
+deploy/dev-ca/*.srl
+
+# Real, filled-in k8s Secret (deploy/k8s/02-secret.example.yaml is the
+# committed template) -- never commit actual credential values.
+deploy/k8s/02-secret.yaml
+
+# Development-session scratch/backup artifacts -- not part of the project.
+backend/_checkpoints/
+backend/BASELINE.txt
+backend/FINAL_DIFF.txt
+backend/PROGRESS.md

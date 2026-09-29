@@ -1,0 +1,100 @@
+# Production-shaped compose: adds a TLS-terminating reverse proxy (nginx) as
+# the only publicly exposed service, and drops the dev conveniences (bind
+# mounts, --reload, host-published DB/MinIO/etc ports) from docker-compose.yml.
+#
+# Run alongside the base file:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# See deploy/nginx/nginx.conf for how to supply a certificate.
+
+version: '3.8'
+
+services:
+  postgres:
+    restart: unless-stopped
+    ports: []  # not published on the host in prod -- only reachable inside ulp-network
+
+  minio:
+    restart: unless-stopped
+    ports: []
+
+  opensearch:
+    restart: unless-stopped
+    ports: []
+
+  redis:
+    restart: unless-stopped
+    ports: []
+
+  redpanda:
+    restart: unless-stopped
+    ports: []
+
+  ollama:
+    restart: unless-stopped
+    ports: []
+
+  backend:
+    restart: unless-stopped
+    ports: []
+    # No *bind* mount (the live source tree) in prod -- run the image as
+    # built -- but a *named* volume at /app/data is required: that's where
+    # the raw-log vault, the checkpoint signing key, and the SQLite fallback
+    # DB actually live (see app/core/local_storage.py, data/keys/). The base
+    # compose file's dev bind mount (`./backend:/app`) happened to keep this
+    # data on the host as a side effect; `volumes: []` here previously
+    # removed that with nothing replacing it, meaning every prod redeploy
+    # would silently discard the evidence vault and signing key -- the two
+    # things this project's integrity story depends on most.
+    volumes:
+      - backend_data:/app/data
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    # Part D12: read-only root filesystem -- everything this process actually
+    # writes to lives under /app/data (the named volume above, still
+    # writable) or is truly transient (/tmp, via the tmpfs below). Nothing
+    # else on disk should ever change at runtime; if it tries to, that's
+    # itself worth knowing about rather than silently allowed.
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  worker:
+    restart: unless-stopped
+    volumes:
+      - backend_data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  syslog-listener:
+    restart: unless-stopped
+    volumes:
+      - backend_data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  frontend:
+    restart: unless-stopped
+    ports: []
+    volumes: []
+    command: npm run build && npm run preview -- --host 0.0.0.0 --port 5173
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: ulp-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - ulp-network
+
+volumes:
+  backend_data:

@@ -1,4 +1,8 @@
 """Integrations API."""
+import socket
+import time
+
+import requests
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -70,16 +74,57 @@ def delete_integration(integration_id: int, db: Session = Depends(get_db)):
     return {"status": "deleted"}
 
 
+def _run_connectivity_test(integration: Integration) -> dict:
+    """Real, kind-specific connectivity check against `integration.config` --
+    never a canned "success". webhook/rest_api do a real HTTP request; s3/
+    opensearch/syslog do a real TCP connect if a host:port is configured;
+    anything else (or missing config) honestly reports it can't be tested
+    from here rather than claiming a fake success."""
+    config = integration.config or {}
+    start = time.monotonic()
+
+    if integration.type in ("webhook", "rest_api"):
+        url = config.get("url")
+        if not url:
+            return {"status": "error", "message": "config.url is not set -- nothing to connect to"}
+        try:
+            resp = requests.get(url, timeout=5)
+            latency_ms = round((time.monotonic() - start) * 1000, 1)
+            ok = resp.status_code < 500
+            return {
+                "status": "success" if ok else "error",
+                "latency_ms": latency_ms,
+                "http_status": resp.status_code,
+                "message": f"Real HTTP GET to {url} returned {resp.status_code}",
+            }
+        except requests.RequestException as e:
+            return {"status": "error", "message": f"Real connection attempt to {url} failed: {e}"}
+
+    host, port = config.get("host"), config.get("port")
+    if host and port:
+        try:
+            with socket.create_connection((host, int(port)), timeout=5):
+                latency_ms = round((time.monotonic() - start) * 1000, 1)
+            return {"status": "success", "latency_ms": latency_ms, "message": f"Real TCP connect to {host}:{port} succeeded"}
+        except OSError as e:
+            return {"status": "error", "message": f"Real TCP connect to {host}:{port} failed: {e}"}
+
+    return {
+        "status": "not_tested",
+        "message": f"No config.url or config.host+config.port set for this '{integration.type}' integration -- nothing to actually test",
+    }
+
+
 @router.post("/integrations/{integration_id}/test")
 def test_integration(integration_id: int, db: Session = Depends(get_db)):
     integration = db.query(Integration).filter(Integration.id == integration_id).first()
     if not integration:
         raise HTTPException(status_code=404, detail="Integration not found")
-        
-    # Simulate a successful connection test
-    integration.status = "connected"
+
+    result = _run_connectivity_test(integration)
+    integration.status = "connected" if result["status"] == "success" else ("error" if result["status"] == "error" else "configured")
     integration.last_test_at = datetime.now(timezone.utc)
-    integration.last_test_result = {"status": "success", "latency_ms": 42, "message": "Connection established successfully"}
-    
+    integration.last_test_result = result
+
     db.commit()
-    return {"status": "success", "result": integration.last_test_result}
+    return {"status": result["status"], "result": result}

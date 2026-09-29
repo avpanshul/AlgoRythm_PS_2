@@ -1,0 +1,23 @@
+# Shared PVC for /app/data (the raw-log vault, the checkpoint signing key
+# under KEY_BACKEND=file, and the SQLite fallback if ever used in-cluster).
+#
+# Honest limitation: this is mounted by backend, worker, AND
+# syslog-listener below, which only works reliably if either (a) the
+# cluster's default StorageClass supports ReadWriteMany, or (b) all three
+# pods happen to land on the same node (true for a small/single-node `kind`
+# smoke-test cluster, not guaranteed on a general multi-node production
+# cluster). The correct fix for a real multi-node deployment is to move raw
+# storage to an S3-compatible backend (MinIO is already in docker-compose.yml
+# but, per docs/GAP_REPORT_PHASE2.md, was never actually wired into
+# app/core/local_storage.py's save path -- that remains a real, separate gap,
+# not solved by this manifest).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backend-data
+  namespace: ulpf
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi

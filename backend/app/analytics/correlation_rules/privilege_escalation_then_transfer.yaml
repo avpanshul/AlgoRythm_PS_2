@@ -1,0 +1,30 @@
+# ULPF-phase2-prompt.md E1 starter rule: data-exfiltration pattern (large
+# outbound transfer after privilege escalation).
+#
+# Honesty note: this pipeline's canonical schema does not carry a reliable
+# bytes-transferred field across all vendor formats (see docs/schema.md),
+# so "large outbound transfer" is approximated by action/category keywords
+# actually present in real vendor logs (transfer/export/upload/copy), not a
+# byte-count threshold this data can't consistently supply. This rule may
+# rarely or never fire against the currently-seeded real corpora, which is
+# an honest reflection of what's in that data -- not a bug to paper over
+# with an invented bytes_out field.
+id: privilege_escalation_then_transfer
+name: "Privilege escalation followed by data transfer"
+description: >
+  A privilege-escalation-shaped action from a source, followed within the
+  window by a transfer/export/upload-shaped action from the same source.
+window_minutes: 60
+severity: critical
+correlate_by: source_ip
+min_distinct_sources: 1
+stages:
+  - name: privilege_escalation
+    match:
+      action_contains: ["escalat", "sudo", "admin", "root", "privilege"]
+    min_count: 1
+  - name: transfer
+    match:
+      action_contains: ["transfer", "export", "upload", "copy", "exfil"]
+    min_count: 1
+    after: privilege_escalation
