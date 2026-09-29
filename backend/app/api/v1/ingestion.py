@@ -29,11 +29,24 @@ def process_single_log(db: Session, raw_log: str, source_id: str, protocol: str)
     
     # Save to local storage
     save_raw_log(raw_location, raw_log)
-    
+
+    # Real bug found live: "UNKNOWN" is used throughout this codebase as the
+    # deliberate sentinel for "no registered source" (see
+    # app/core/processing.py's own `source_id if source_id != "UNKNOWN" else
+    # None` before every source_id-bearing insert it makes) -- but this was
+    # the one insert that skipped that normalization. raw_event_metadata
+    # .source_id has a real FK to sources.id (nullable=True, so None is
+    # always valid); passing the literal string "UNKNOWN" straight through
+    # hit that FK and crashed with psycopg2.errors.ForeignKeyViolation on
+    # every /ingest/syslog and /ingest/windows-event-log call from a source
+    # that was never manually pre-registered on the Sources page -- exactly
+    # the normal case for raw syslog/WEL ingestion.
+    normalized_source_id = source_id if source_id and source_id != "UNKNOWN" else None
+
     # Save metadata to DB
     metadata = RawEventMetadata(
         event_id=event_id,
-        source_id=source_id,
+        source_id=normalized_source_id,
         received_at=received_at,
         ingestion_protocol=protocol,
         raw_sha256=raw_sha256,
