@@ -13,6 +13,38 @@ import {
 import { api } from '../api/client'
 import { setToken } from '../auth/authStore'
 
+// Module-level (not defined inside AuthPanel): a component declared inside
+// another component's body is a new function identity on every render, so
+// React treats each keystroke's re-render as a brand-new component type and
+// remounts the real <input> DOM node -- which drops focus after every single
+// character typed. This was a real bug found live on the deployed signup
+// form (typing "an" only kept "a", losing focus each time). Keeping it here
+// at module scope gives it a stable identity across renders.
+function InputField({ label, type, placeholder, value, onChange, onEnter }: { label: string, type: string, placeholder: string, value: string, onChange: (v: string) => void, onEnter?: () => void }) {
+  return (
+    <div>
+      <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' as const, color: 'rgba(255,255,255,0.85)', marginBottom: '0.4rem' }}>
+        {label}
+      </label>
+      <input
+        type={type}
+        placeholder={placeholder}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && onEnter?.()}
+        style={{
+          width: '100%', padding: '0.75rem 1rem', borderRadius: '0.75rem',
+          background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)',
+          color: '#fff', fontSize: '0.875rem', outline: 'none',
+          transition: 'border-color 0.18s ease',
+        }}
+        onFocus={e => { (e.target as HTMLInputElement).style.borderColor = 'rgba(0,68,168,0.7)' }}
+        onBlur={e => { (e.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.12)' }}
+      />
+    </div>
+  )
+}
+
 // ─── AUTH PANEL (right-side sliding glass panel) ───────────────────────────
 // The one real login/signup surface for this app -- RequireAuth sends
 // anyone not logged in back here (not to a separate page) when they hit a
@@ -81,29 +113,6 @@ function AuthPanel({ navigate, redirectTo }: { navigate: (path: string) => void;
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   }
 
-  const InputField = ({ label, type, placeholder, value, onChange, onEnter }: { label: string, type: string, placeholder: string, value: string, onChange: (v: string) => void, onEnter?: () => void }) => (
-    <div>
-      <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' as const, color: 'rgba(255,255,255,0.85)', marginBottom: '0.4rem' }}>
-        {label}
-      </label>
-      <input
-        type={type}
-        placeholder={placeholder}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        onKeyDown={e => e.key === 'Enter' && onEnter?.()}
-        style={{
-          width: '100%', padding: '0.75rem 1rem', borderRadius: '0.75rem',
-          background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)',
-          color: '#fff', fontSize: '0.875rem', outline: 'none',
-          transition: 'border-color 0.18s ease',
-        }}
-        onFocus={e => { (e.target as HTMLInputElement).style.borderColor = 'rgba(0,68,168,0.7)' }}
-        onBlur={e => { (e.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.12)' }}
-      />
-    </div>
-  )
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', animation: 'fadeIn 0.35s ease forwards' }}>
 
@@ -164,29 +173,38 @@ function AuthPanel({ navigate, redirectTo }: { navigate: (path: string) => void;
             <ArrowRight style={{ width: '1rem', height: '1rem', marginLeft: '0.5rem' }} />
           </button>
 
-          {/* Demo login: the one real, working seeded account this local
-              deployment actually has (see backend/scripts/run_local_demo.py's
-              ADMIN_INITIAL_EMAIL/PASSWORD defaults) -- not a placeholder, a
-              real credential that really logs in. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0.25rem 0' }}>
-            <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.12)' }} />
-            <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', letterSpacing: '0.05em' }}>OR</span>
-            <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.12)' }} />
-          </div>
-          <button
-            type="button"
-            onClick={() => { setLoginEmail('admin@ulpf.local'); setLoginPassword('local-demo-admin-pw'); }}
-            style={{
-              width: '100%', padding: '0.7rem 1rem', borderRadius: '0.75rem',
-              background: 'rgba(255,255,255,0.06)', border: '1px dashed rgba(255,255,255,0.25)',
-              color: 'rgba(255,255,255,0.85)', fontSize: '0.8rem', fontWeight: 600,
-              cursor: 'pointer', transition: 'background 0.18s ease',
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.1)' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.06)' }}
-          >
-            Fill Demo Admin Credentials
-          </button>
+          {/* Demo login: only the LOCAL dev seed (backend/scripts/run_local_demo.py's
+              ADMIN_INITIAL_EMAIL/PASSWORD defaults) actually has this account --
+              a deployed backend seeds its own real admin from its own
+              ADMIN_INITIAL_EMAIL/PASSWORD env vars, which are never this
+              hardcoded pair. Showing this button in a production build filled
+              in a login that could never succeed there (real bug found live:
+              "demo login is not working"). import.meta.env.DEV is Vite's
+              build-time flag -- true only for `npm run dev`, false in the
+              built bundle this deployment actually serves. */}
+          {import.meta.env.DEV && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0.25rem 0' }}>
+                <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.12)' }} />
+                <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', letterSpacing: '0.05em' }}>OR</span>
+                <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.12)' }} />
+              </div>
+              <button
+                type="button"
+                onClick={() => { setLoginEmail('admin@ulpf.local'); setLoginPassword('local-demo-admin-pw'); }}
+                style={{
+                  width: '100%', padding: '0.7rem 1rem', borderRadius: '0.75rem',
+                  background: 'rgba(255,255,255,0.06)', border: '1px dashed rgba(255,255,255,0.25)',
+                  color: 'rgba(255,255,255,0.85)', fontSize: '0.8rem', fontWeight: 600,
+                  cursor: 'pointer', transition: 'background 0.18s ease',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.1)' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.06)' }}
+              >
+                Fill Demo Admin Credentials (local dev only)
+              </button>
+            </>
+          )}
         </div>
       ) : (
         // Sign Up form
