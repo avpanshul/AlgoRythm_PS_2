@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import os
+import traceback
 from alembic import command
 from alembic.config import Config as AlembicConfig
 
@@ -33,6 +34,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Real gap found live on the Render deployment: an unhandled exception inside
+# a route returned Starlette's default plain-text 500 with zero trace in
+# Render's log stream -- its own request-scope stderr write isn't reliably
+# captured there (confirmed: the startup-crash Alembic traceback earlier had
+# the exact same gap). print() to stdout is reliably captured, so every
+# unhandled exception is now logged that way before the generic 500 goes out.
+@app.exception_handler(Exception)
+async def _log_unhandled_exception(request: Request, exc: Exception):
+    print(f"UNHANDLED EXCEPTION on {request.method} {request.url.path}: {exc!r}", flush=True)
+    traceback.print_exc()
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
 
 # Request body size guard, mainly for the raw-body /ingest/syslog endpoint which
 # reads request.body() directly and has no Pydantic-level size validation.
