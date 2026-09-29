@@ -36,7 +36,15 @@ class BatchIngestRequest(BaseModel):
 
 class RawEventResponse(BaseModel):
     event_id: str
-    source_id: str
+    # Optional: raw_event_metadata.source_id is a nullable FK (app/models/all.py)
+    # -- an ingested event from a source that was never manually registered on
+    # the Sources page genuinely has no source row to point at (see
+    # app/api/v1/ingestion.py's "UNKNOWN" -> None normalization). Real bug
+    # found live: this was `str` (required), so FastAPI's own response-model
+    # validation raised ResponseValidationError on exactly the case the FK
+    # fix above made possible -- a 500 traded for another 500, not fixed
+    # until the response schema was made to match the actual nullable column.
+    source_id: Optional[str] = None
     received_at: datetime
     ingestion_protocol: str
     raw_sha256: str
