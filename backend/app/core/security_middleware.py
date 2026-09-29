@@ -36,15 +36,36 @@ _lock = threading.Lock()
 
 _redis_client = None
 _redis_warned = False
+_redis_last_failure = 0.0
+_REDIS_RETRY_COOLDOWN_SECONDS = 30
 
 
 def _get_redis():
     """Lazily connects (and caches) a Redis client. Returns None -- rather
     than raising -- on any connection problem, so callers always have a
-    clean fallback path instead of a try/except at every call site."""
-    global _redis_client, _redis_warned
+    clean fallback path instead of a try/except at every call site.
+
+    Real bug found live (2026-09-29): this used to attempt a fresh
+    connection (with its own 0.5s socket timeout) on *every single call*
+    whenever Redis was unreachable -- it cached a success but never cached
+    a failure. In practice each attempt actually took ~1-1.3s (connect
+    timeout plus real OS-level connection-refused overhead on this
+    network), so with Redis down, 121 requests spent over two minutes just
+    retrying Redis before ever finishing -- comfortably longer than the
+    in-memory limiter's own 60s window, so its sliding-window pruning
+    evicted early timestamps before the request count could ever reach the
+    configured limit. Net effect: with no Redis reachable (the exact
+    demo/air-gapped scenario this fallback exists for, per this module's
+    own docstring), rate limiting silently never triggered at all -- not a
+    test-only issue, a real gap in exactly the deployment shape it was
+    supposed to protect. Fixed by caching the failure too, with a cooldown
+    before the next real retry, so a down Redis costs one slow attempt
+    every 30s, not one on every request."""
+    global _redis_client, _redis_warned, _redis_last_failure
     if _redis_client is not None:
         return _redis_client
+    if _redis_last_failure and (time.monotonic() - _redis_last_failure) < _REDIS_RETRY_COOLDOWN_SECONDS:
+        return None
     try:
         import redis as redis_lib
         client = redis_lib.from_url(settings.REDIS_URL, socket_connect_timeout=0.5, socket_timeout=0.5)
@@ -52,6 +73,7 @@ def _get_redis():
         _redis_client = client
         return _redis_client
     except Exception:
+        _redis_last_failure = time.monotonic()
         if not _redis_warned:
             warnings.warn(
                 "Rate limiting: Redis is unreachable -- falling back to a per-process, "

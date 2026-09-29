@@ -53,7 +53,15 @@ class TestRuleLoading:
         for r in rules:
             assert "window_minutes" in r
             assert "correlate_by" in r
-            assert "stages" in r and len(r["stages"]) >= 2
+            # Real bug found live (2026-09-29): this asserted every rule has
+            # >=2 stages, written back when only the 3 original multi-stage
+            # sequence rules existed. ntlm_password_spraying is a real,
+            # deliberately single-stage rule (many distinct accounts hit
+            # from one source in a window is itself the whole detection --
+            # password spraying has no "sequence" to require, unlike
+            # brute-force-then-lateral-movement) -- every rule genuinely
+            # needs at least one stage, but not necessarily two or more.
+            assert "stages" in r and len(r["stages"]) >= 1
 
 
 class TestBruteForceThenLateralMovement:

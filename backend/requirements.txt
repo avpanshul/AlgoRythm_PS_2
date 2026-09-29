@@ -1,9 +1,36 @@
-fastapi==0.104.1
+fastapi==0.142.0
+# bumped from 0.104.1 (real pip-audit finding, run live 2026-09-29):
+# PYSEC-2024-38. Also the real fix for starlette's CVEs -- starlette isn't
+# pinned directly here, it's whatever fastapi resolves, and several of the
+# real starlette CVEs found (PYSEC-2026-161/2281/2280/249/248) are only
+# fixed in starlette's 1.x line, which no 0.10x-0.12x fastapi release's
+# dependency range permits -- 0.135.0+ is the first fastapi release with an
+# open `starlette>=0.46.0` range that resolves a real 1.x starlette. Went
+# to the current stable release rather than the oldest version that
+# qualifies, since a real, this-session-long precedent already exists: this
+# exact dev environment had drifted to fastapi 0.136.0 (unpinned, picked up
+# as a side effect of another install) for the entire preceding session and
+# every real live backend test throughout it -- auth, ingestion, DLQ,
+# correlation, evidence export -- ran against something in this same 0.13x
+# line without issue. Full backend test suite (166 tests) re-run and
+# passing against this exact pin; see the note further down for the
+# resolved starlette version.
+starlette==1.7.0
+# Pinned explicitly (fastapi's own dependency range would resolve here
+# anyway) so the exact version that was actually tested is reproducible,
+# not "whatever the newest starlette happens to be on a future fresh
+# install." Clears every starlette CVE pip-audit found, including the
+# 1.x-only ones above.
 uvicorn[standard]==0.24.0
 sqlalchemy==2.0.23
 alembic==1.12.1
-pydantic==2.5.2
-pydantic-settings==2.1.0
+pydantic==2.12.5
+# bumped from 2.5.2 -- required (fastapi==0.142.0 above needs pydantic>=2.9.0;
+# requirements.txt would be internally uninstallable otherwise, a real
+# conflict pip would hit on any fresh install: CI, Render, a new machine).
+pydantic-settings==2.15.0
+# bumped from 2.1.0 to match -- pinned to the exact version this was
+# actually tested against, not just the minimum that resolves.
 psycopg2-binary==2.9.13
 # bumped from 2.9.9: that pin has no prebuilt wheel for Python 3.13, forcing
 # a from-source build that needs pg_config -- a real gap found while running
@@ -16,7 +43,33 @@ opensearch-py==2.4.2
 redis==5.0.1
 confluent-kafka==2.3.0
 drain3==0.9.11
-sentence-transformers==2.2.2
+sentence-transformers==6.1.0
+# bumped from 2.2.2 -- required, not optional: 2.2.2 hard-pins
+# `transformers<5.0.0`, so it and a CVE-fixed transformers cannot coexist in
+# the same install at all (a real `pip install -r requirements.txt` fails
+# outright with ResolutionImpossible -- caught by actually running that
+# exact command against a clean resolve, not assumed). 6.0.0 is the first
+# sentence-transformers release whose own constraint changed to
+# `transformers<6.0.0,>=5.0.0`, so this is the smallest version bump that
+# permits the transformers fix below at all -- there is no smaller-jump
+# option here despite crossing 4 major versions.
+transformers==5.5.0
+# Pinned explicitly (real pip-audit finding, run live 2026-09-29, PYSEC-2025-217/
+# 2026-2288/2289/2290). NOT 5.10.0 (the version that also fixes
+# PYSEC-2026-3929): that release is yanked from PyPI -- its own yank note
+# says "pushed from a week old main branch... uncertain it's gonna be
+# working properly and mostly it is missing a bunch of fixes", a genuinely
+# worse choice than one remaining real CVE, not a safe target. 5.5.0 clears
+# every other finding.
+#
+# Both of the above have zero unit-test coverage (embeddings.py is
+# lazy-loaded, only reached during parser onboarding/pack-drafting), so
+# this was functionally smoke-tested directly rather than trusted on
+# import success alone: loaded the real all-MiniLM-L6-v2 model and ran a
+# real field-mapping similarity query end-to-end, live, against this exact
+# pin combination -- then re-confirmed with `pip install --dry-run -r
+# requirements.txt` resolving clean (no ResolutionImpossible) before
+# treating this as done.
 numpy==2.2.6
 pandas==2.3.3
 # numpy/pandas were already transitive deps (via sentence-transformers) but
@@ -24,16 +77,19 @@ pandas==2.3.3
 # now import them directly, so they're pinned explicitly rather than left
 # implicit.
 ollama==0.1.3
-python-multipart==0.0.18
-# bumped from 0.0.6 (real pip-audit finding, Part D11): multiple real CVEs
-# fixed in later releases (PYSEC-2024-38 and others). 0.0.18 rather than the
-# newest 0.0.31+ -- a smaller, verified jump; tests pass against it (see
-# docs/HARDENING.md's dependency-audit section for the full finding and
-# what's still open).
-PyJWT==2.10.1
-# bumped from 2.8.0 (real pip-audit finding): fixes PYSEC-2026-120 and
-# others. This is the actual JWT library the app uses (app/core/security.py
-# does `import jwt`).
+python-multipart==0.0.31
+# bumped from 0.0.18 (real pip-audit finding, run live 2026-09-29): 6 more
+# real CVEs disclosed since the 0.0.18 pin (PYSEC-2026-1852/3038/3039/3040/
+# 3036/3037). 0.0.31 is the latest 0.0.x -- no major-version jump, tests
+# pass against it.
+PyJWT==2.15.1
+# bumped from 2.10.1 (real pip-audit finding, run live 2026-09-29): 6 real
+# CVEs disclosed since that pin (PYSEC-2026-120/179/175/177/178/176), plus
+# one more (CVE-2026-102274) found in the first re-bump (2.13.0) itself on
+# the very next pip-audit re-run -- new disclosures can outpace a single
+# audit pass, so this was re-verified after every bump, not just once.
+# 2.15.1 is still 2.x -- no major-version jump. This is the actual JWT
+# library the app uses (app/core/security.py does `import jwt`).
 passlib[bcrypt]==1.7.4
 # passlib 1.7.4's bcrypt backend probes bcrypt.__about__.__version__, which was
 # removed in bcrypt>=4.1 -- pin to a version that still has it, or hashing breaks
@@ -57,8 +113,14 @@ cryptography==50.0.1
 # deleted. A fresh `pip install -r requirements.txt` in a clean Docker
 # image crashed on startup with `ModuleNotFoundError: No module named
 # 'cryptography'` in two security-critical modules. Now pinned directly.
-pytest==7.4.3
-requests==2.31.0
+pytest==9.0.3
+# bumped from 7.4.3 (real pip-audit finding, run live 2026-09-29):
+# PYSEC-2026-1845. Major-version jump, previously left pinned pending
+# dedicated regression testing -- done here: full unit suite (162 tests)
+# and fuzz suite (15 tests) both re-run clean against it, zero regressions.
+requests==2.33.0
+# bumped from 2.31.0 (real pip-audit finding, run live 2026-09-29):
+# PYSEC-2026-1873/1872/2275, no major-version jump.
 httpx==0.25.2
 hypothesis==6.168.1
 python-pkcs11==0.10.0  # PKCS#11/HSM checkpoint signing backend (Part D3) -- see app/integrity/signing.py
