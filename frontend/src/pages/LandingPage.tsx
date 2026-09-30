@@ -109,7 +109,7 @@ function AuthPanel({ navigate, redirectTo }: { navigate: (path: string) => void;
     cursor: 'pointer', fontWeight: 700, letterSpacing: '0.08em',
     fontSize: 'clamp(0.8rem, 1vw, 0.95rem)',
     textTransform: 'uppercase' as const,
-    transition: 'all 0.2s cubic-bezier(0.34,1.56,0.64,1)',
+    transition: 'all 0.2s cubic-bezier(0.25,1,0.5,1)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   }
 
@@ -831,7 +831,7 @@ export default function LandingPage() {
                   background: 'linear-gradient(135deg, #0044A8 0%, #0066DD 100%)',
                   boxShadow: '0 4px 20px rgba(0,68,168,0.35), inset 0 1px 0 rgba(255,255,255,0.15)',
                   border: '1px solid rgba(0,68,168,0.6)',
-                  transition: 'all 0.22s cubic-bezier(0.34,1.56,0.64,1)',
+                  transition: 'all 0.22s cubic-bezier(0.25,1,0.5,1)',
                 }}
                 className="group relative rounded-2xl text-white font-bold tracking-wide flex items-center justify-center gap-2.5 overflow-hidden cursor-pointer"
                 onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px) scale(1.02)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 8px 28px rgba(0,68,168,0.5), inset 0 1px 0 rgba(255,255,255,0.2)' }}
