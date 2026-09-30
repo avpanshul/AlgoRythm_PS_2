@@ -1,11 +1,20 @@
 # Real bug found building the E10 kind smoke-test image: with no
-# .dockerignore, `docker build` was uploading the live SQLite DB, the real
-# vendor-corpus datasets, downloaded tool binaries, and test caches into the
-# build context -- none of which belong in the image, and which (over the
-# slow Windows-filesystem-to-WSL2 bridge Docker Desktop uses) turned a
+# .dockerignore, `docker build` was uploading the live SQLite DB,
+# downloaded tool binaries, and test caches into the build context --
+# none of which belong in the image, and which (over the slow
+# Windows-filesystem-to-WSL2 bridge Docker Desktop uses) turned a
 # few-second context transfer into a multi-minute one. See docs/deployment.md.
+#
+# datasets/ is deliberately NOT excluded (only 32MB -- negligible next to
+# the torch/transformers layers already in this image): a second real bug
+# found live, this time on the actual Render deployment, was seed.py's
+# real-data bootstrap crashing with `ModuleNotFoundError: No module named
+# 'build_corpus'` because excluding datasets/ here meant corpus.jsonl (and
+# every fallback .py builder for it) never existed in ANY Docker-built
+# image at all, local kind-cluster or production alike -- not just slower
+# to build, genuinely missing. This is the real loghub/EVTX/Zeek/CloudTrail
+# data a fresh deployment's seed.py needs to reach local-dev parity.
 data/
-datasets/
 bin/
 .pytest_cache/
 .hypothesis/

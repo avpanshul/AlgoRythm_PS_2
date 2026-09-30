@@ -12,7 +12,7 @@ from app.core.database import get_db
 from app.core.security import hash_password, create_access_token
 from app.core.deps import require_role
 from app.core.config import settings
-from app.models.all import User, Role, Organization, AuditLog, IngestToken, IngestionRun
+from app.models.all import User, Role, Organization, AuditLog, IngestToken, IngestionRun, RawEventMetadata
 
 router = APIRouter()
 
@@ -274,9 +274,15 @@ def _run_bootstrap_seed():
 
 @router.post("/admin/oneoff-bootstrap-real-data")
 def oneoff_bootstrap_real_data(db: Session = Depends(get_db), current_user: User = Depends(require_role("admin"))):
-    from app.models.all import Source
-    if db.query(Source).filter(Source.id == "SYS-LNX").first():
-        raise HTTPException(status_code=409, detail="Already bootstrapped -- SYS-LNX source already exists. Refusing to avoid double-seeding every event.")
+    # Guards against re-running seed_real_events() (which has no dedup and
+    # would double every row), not against re-running seed.main() as a
+    # whole -- seed_roles/seed_sources_for_real_data/seed_parsers are all
+    # idempotent (existence-checked or db.merge()), so a run that seeded
+    # those but crashed before writing any events (a real case: the first
+    # production attempt crashed on a missing corpus file before its loop
+    # started) is safe, and correct, to retry in full.
+    if db.query(RawEventMetadata).filter(RawEventMetadata.ingestion_protocol.like("seed-real-%")).first():
+        raise HTTPException(status_code=409, detail="Already bootstrapped -- seed-real-* events already exist. Refusing to avoid double-seeding every event.")
     with _bootstrap_lock:
         if _bootstrap_state["status"] == "running":
             raise HTTPException(status_code=409, detail="Bootstrap already running")
