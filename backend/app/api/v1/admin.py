@@ -239,3 +239,53 @@ def trigger_ingestion_run(db: Session = Depends(get_db), current_user: User = De
     if not run:
         raise HTTPException(status_code=500, detail="Ingestion run did not record a row")
     return run
+
+
+# ─── One-off real-data bootstrap (temporary; remove after use) ──────────
+#
+# seed.py's main() is the exact script every local dev environment has always
+# been run through once, by hand, against a fresh Postgres, to load the real
+# loghub/EVTX/Zeek/CloudTrail corpora + role/parser/correlation-rule
+# definitions. Nothing in the Docker image, Procfile, or startup_event ever
+# calls it automatically -- a real gap found live: this deployment's fresh
+# production DB never got that one-time bootstrap a local dev DB always has,
+# which is the entire reason its event/source/parser counts don't match
+# local's. seed_real_events() has no dedup guard (unlike auto_ingest.py's
+# run_once(), which explicitly skips already-ingested sha256es for exactly
+# this reason) -- calling it twice would double every row -- so this is
+# deliberately NOT a repeatable button: it refuses outright if the real
+# sources it seeds already exist, and it's meant to be deleted from this
+# file again once it's been run the one time production actually needs it.
+import threading as _threading
+
+_bootstrap_state = {"status": "idle", "detail": None}
+_bootstrap_lock = _threading.Lock()
+
+
+def _run_bootstrap_seed():
+    global _bootstrap_state
+    try:
+        import seed as _seed
+        _seed.main()
+        _bootstrap_state = {"status": "done", "detail": None}
+    except Exception as e:
+        _bootstrap_state = {"status": "error", "detail": str(e)}
+
+
+@router.post("/admin/oneoff-bootstrap-real-data")
+def oneoff_bootstrap_real_data(db: Session = Depends(get_db), current_user: User = Depends(require_role("admin"))):
+    from app.models.all import Source
+    if db.query(Source).filter(Source.id == "SYS-LNX").first():
+        raise HTTPException(status_code=409, detail="Already bootstrapped -- SYS-LNX source already exists. Refusing to avoid double-seeding every event.")
+    with _bootstrap_lock:
+        if _bootstrap_state["status"] == "running":
+            raise HTTPException(status_code=409, detail="Bootstrap already running")
+        _bootstrap_state["status"] = "running"
+        _bootstrap_state["detail"] = None
+        _threading.Thread(target=_run_bootstrap_seed, daemon=True).start()
+    return {"status": "started"}
+
+
+@router.get("/admin/oneoff-bootstrap-real-data/status")
+def oneoff_bootstrap_real_data_status(current_user: User = Depends(require_role("admin"))):
+    return _bootstrap_state
