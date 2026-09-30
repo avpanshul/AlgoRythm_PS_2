@@ -160,7 +160,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'clamp(16px, 2vh, 24px)' }}>
+    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'clamp(16px, 2vh, 24px)', minHeight: 'calc(100vh - 64px)' }}>
 
       {/* Top bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
@@ -332,7 +332,7 @@ export default function Dashboard() {
       </div>
 
       {/* Main content grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 'clamp(14px, 1.8vw, 22px)', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 'clamp(14px, 1.8vw, 22px)', alignItems: 'stretch', flex: 1 }}>
         {/* Left col */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'clamp(14px, 1.8vw, 22px)' }}>
 
@@ -403,8 +403,12 @@ export default function Dashboard() {
           </GlassCard>
 
           {/* Source health (moved here from the right column, replacing
-              Critical Alerts per request) */}
-          <GlassCard variant="elevated" size="none" style={{ padding: 'clamp(16px, 1.8vw, 22px)' }}>
+              Critical Alerts per request). flex:1 lets this last card in the
+              left column absorb whatever vertical space is left over so the
+              column's real background/border extends to the bottom of the
+              viewport instead of leaving raw page background exposed below
+              it -- no fabricated extra rows, just the panel itself growing. */}
+          <GlassCard variant="elevated" size="none" style={{ padding: 'clamp(16px, 1.8vw, 22px)', flex: 1, display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
               <h3 className="section-heading">Source Health</h3>
               <Link to="/sources" style={{ fontSize: 11, color: '#0044A8', fontWeight: 600, textDecoration: 'none' }}>
@@ -485,8 +489,11 @@ export default function Dashboard() {
             </div>
           </GlassCard>
 
-          {/* Format distribution */}
-          <GlassCard variant="elevated" size="none" style={{ padding: 'clamp(16px, 1.8vw, 22px)' }}>
+          {/* Format distribution -- flex:1 for the same reason as Source
+              Health above: the right column now stretches to match the left
+              column's height, so this last card should absorb the leftover
+              space rather than leave blank page background beneath it. */}
+          <GlassCard variant="elevated" size="none" style={{ padding: 'clamp(16px, 1.8vw, 22px)', flex: 1, display: 'flex', flexDirection: 'column' }}>
             <h3 className="section-heading" style={{ marginBottom: 14 }}>Format Distribution</h3>
             {formatShare.length === 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px 0', gap: 8 }}>
