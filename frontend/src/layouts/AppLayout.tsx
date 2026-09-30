@@ -5,7 +5,7 @@ import HelpButton from '../components/HelpButton'
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div style={{
-      display: 'flex', minHeight: '100vh', width: '100%',
+      display: 'flex', height: '100vh', width: '100%', overflow: 'hidden',
       background: 'linear-gradient(135deg, #eef4ff 0%, #f5f9ff 40%, #f0f6ff 70%, #eaf3ff 100%)',
       position: 'relative',
     }}>
