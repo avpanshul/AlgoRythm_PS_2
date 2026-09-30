@@ -108,7 +108,7 @@ export default function Sidebar() {
           padding: '10px 12px', borderRadius: 12, textDecoration: 'none',
           fontSize: 'clamp(16px, 1.2vw, 18px)', fontWeight: isActive ? 600 : 500,
           position: 'relative', overflow: 'hidden',
-          transition: 'all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          transition: 'all 0.2s cubic-bezier(0.25,1,0.5,1)',
           background: isActive
             ? 'rgba(0,68,168,0.1)'
             : isHovered ? 'rgba(0,68,168,0.05)' : 'transparent',
