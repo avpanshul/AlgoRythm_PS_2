@@ -193,13 +193,26 @@ def seed_real_events(db: Session, limit: int = None, corpus_path: str = None, bu
     format_counts = {}
     ok_count = 0
     dlq_count = 0
+    skipped_count = 0
 
     for row in rows:
         raw_log = row["raw"]
         source_id = row.get("source_id") or "UNKNOWN"
 
-        event_id = f"evt_{uuid.uuid4().hex}"
         raw_sha256 = hashlib.sha256(raw_log.encode("utf-8")).hexdigest()
+
+        # Real gap found live: a Render free-tier deploy spun this down mid-run
+        # (inbound-HTTP-inactivity idle timeout, independent of this loop's own
+        # CPU usage) and killed the process with ~13,800/34,600 events already
+        # committed. Without this, re-running main() after a restart would
+        # double every already-seeded row. Same dedup-by-raw_sha256 pattern
+        # auto_ingest.py already uses for exactly this reason -- makes this
+        # loop safely resumable, not just safely re-runnable from empty.
+        if db.query(RawEventMetadata).filter(RawEventMetadata.raw_sha256 == raw_sha256).first():
+            skipped_count += 1
+            continue
+
+        event_id = f"evt_{uuid.uuid4().hex}"
         received_at = datetime.now(timezone.utc)
         date_path = received_at.strftime("%Y/%m/%d")
         raw_location = f"{date_path}/{event_id}.txt"
@@ -227,9 +240,9 @@ def seed_real_events(db: Session, limit: int = None, corpus_path: str = None, bu
         else:
             dlq_count += 1
 
-    print(f"  -> {ok_count} NormalizedEvent rows, {dlq_count} DLQEvent rows")
+    print(f"  -> {ok_count} NormalizedEvent rows, {dlq_count} DLQEvent rows, {skipped_count} already-seeded rows skipped")
     print(f"  -> format breakdown: {format_counts}")
-    return {"ok": ok_count, "dlq": dlq_count, "formats": format_counts}
+    return {"ok": ok_count, "dlq": dlq_count, "skipped": skipped_count, "formats": format_counts}
 
 
 def seed_correlation_rules(db: Session):

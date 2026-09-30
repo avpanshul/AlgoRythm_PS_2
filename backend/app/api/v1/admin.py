@@ -12,7 +12,7 @@ from app.core.database import get_db
 from app.core.security import hash_password, create_access_token
 from app.core.deps import require_role
 from app.core.config import settings
-from app.models.all import User, Role, Organization, AuditLog, IngestToken, IngestionRun, RawEventMetadata
+from app.models.all import User, Role, Organization, AuditLog, IngestToken, IngestionRun
 
 router = APIRouter()
 
@@ -274,15 +274,13 @@ def _run_bootstrap_seed():
 
 @router.post("/admin/oneoff-bootstrap-real-data")
 def oneoff_bootstrap_real_data(db: Session = Depends(get_db), current_user: User = Depends(require_role("admin"))):
-    # Guards against re-running seed_real_events() (which has no dedup and
-    # would double every row), not against re-running seed.main() as a
-    # whole -- seed_roles/seed_sources_for_real_data/seed_parsers are all
-    # idempotent (existence-checked or db.merge()), so a run that seeded
-    # those but crashed before writing any events (a real case: the first
-    # production attempt crashed on a missing corpus file before its loop
-    # started) is safe, and correct, to retry in full.
-    if db.query(RawEventMetadata).filter(RawEventMetadata.ingestion_protocol.like("seed-real-%")).first():
-        raise HTTPException(status_code=409, detail="Already bootstrapped -- seed-real-* events already exist. Refusing to avoid double-seeding every event.")
+    # seed_real_events() now skips any row whose raw_sha256 is already in
+    # RawEventMetadata (real gap found live: a Render free-tier idle-timeout
+    # spun this down mid-run at ~13,800/34,600 events, with no deploy event
+    # to explain it -- inbound-HTTP inactivity triggers that independently
+    # of a background thread's own CPU usage), so re-running main() is
+    # always safe now: it resumes from wherever a prior run stopped instead
+    # of duplicating anything. Only concurrent runs need blocking.
     with _bootstrap_lock:
         if _bootstrap_state["status"] == "running":
             raise HTTPException(status_code=409, detail="Bootstrap already running")
