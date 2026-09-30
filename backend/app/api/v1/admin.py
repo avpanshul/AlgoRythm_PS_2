@@ -365,3 +365,53 @@ def oneoff_seed_cloudtrail(current_user: User = Depends(require_role("admin"))):
 @router.get("/admin/oneoff-seed-cloudtrail/status")
 def oneoff_seed_cloudtrail_status(current_user: User = Depends(require_role("admin"))):
     return _cloudtrail_state
+
+
+# Zeek is the other real corpus that's JSON-formatted (build_zeek_corpus.py
+# converts each real CSV row to one JSON log line -- see that script's own
+# provenance docstring). CloudTrail alone (2,900 records) can't push JSON
+# past ~11% of this deployment's growing total; Zeek (8,159 records) is the
+# other real lever. Same pattern as the CloudTrail-only endpoint above:
+# dedup-safe, pausable, independently resumable.
+_zeek_state = {"status": "idle", "detail": None}
+_zeek_lock = _threading.Lock()
+
+
+def _run_zeek_seed():
+    global _zeek_state
+    from app.services.live_detection import pause_background_detection, resume_background_detection
+    pause_background_detection()
+    try:
+        import seed as _seed
+        from app.core.database import SessionLocal
+        db = SessionLocal()
+        try:
+            result = _seed.seed_real_events(
+                db,
+                corpus_path=_seed.ZEEK_CORPUS_PATH,
+                builder_module="build_zeek_corpus",
+                label="Zeek/Bro IDS",
+            )
+            _zeek_state = {"status": "done", "detail": result}
+        finally:
+            db.close()
+    except Exception as e:
+        _zeek_state = {"status": "error", "detail": str(e)}
+    finally:
+        resume_background_detection()
+
+
+@router.post("/admin/oneoff-seed-zeek")
+def oneoff_seed_zeek(current_user: User = Depends(require_role("admin"))):
+    with _zeek_lock:
+        if _zeek_state["status"] == "running":
+            raise HTTPException(status_code=409, detail="Zeek seed already running")
+        _zeek_state["status"] = "running"
+        _zeek_state["detail"] = None
+        _threading.Thread(target=_run_zeek_seed, daemon=True).start()
+    return {"status": "started"}
+
+
+@router.get("/admin/oneoff-seed-zeek/status")
+def oneoff_seed_zeek_status(current_user: User = Depends(require_role("admin"))):
+    return _zeek_state
