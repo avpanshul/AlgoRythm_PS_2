@@ -25,7 +25,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       <Sidebar />
       <main className="app-main" style={{
-        flex: 1, overflowY: 'auto', minWidth: 0, position: 'relative', zIndex: 1,
+        flex: 1, minHeight: 0, overflowY: 'auto', minWidth: 0, position: 'relative', zIndex: 1,
         padding: 'clamp(20px, 2.5vh, 32px) clamp(20px, 2.5vw, 36px)',
       }}>
         <div style={{ maxWidth: 1440, margin: '0 auto', width: '100%' }}>
