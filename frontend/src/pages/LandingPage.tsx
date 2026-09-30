@@ -173,38 +173,40 @@ function AuthPanel({ navigate, redirectTo }: { navigate: (path: string) => void;
             <ArrowRight style={{ width: '1rem', height: '1rem', marginLeft: '0.5rem' }} />
           </button>
 
-          {/* Demo login: only the LOCAL dev seed (backend/scripts/run_local_demo.py's
-              ADMIN_INITIAL_EMAIL/PASSWORD defaults) actually has this account --
-              a deployed backend seeds its own real admin from its own
-              ADMIN_INITIAL_EMAIL/PASSWORD env vars, which are never this
-              hardcoded pair. Showing this button in a production build filled
-              in a login that could never succeed there (real bug found live:
-              "demo login is not working"). import.meta.env.DEV is Vite's
-              build-time flag -- true only for `npm run dev`, false in the
-              built bundle this deployment actually serves. */}
-          {import.meta.env.DEV && (
-            <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0.25rem 0' }}>
-                <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.12)' }} />
-                <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', letterSpacing: '0.05em' }}>OR</span>
-                <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.12)' }} />
-              </div>
-              <button
-                type="button"
-                onClick={() => { setLoginEmail('admin@ulpf.local'); setLoginPassword('local-demo-admin-pw'); }}
-                style={{
-                  width: '100%', padding: '0.7rem 1rem', borderRadius: '0.75rem',
-                  background: 'rgba(255,255,255,0.06)', border: '1px dashed rgba(255,255,255,0.25)',
-                  color: 'rgba(255,255,255,0.85)', fontSize: '0.8rem', fontWeight: 600,
-                  cursor: 'pointer', transition: 'background 0.18s ease',
-                }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.1)' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.06)' }}
-              >
-                Fill Demo Admin Credentials (local dev only)
-              </button>
-            </>
-          )}
+          {/* Demo login: fills in a real, working, but deliberately
+              LOW-PRIVILEGE account -- never the real admin. VITE_* env vars
+              are baked into the public JS bundle at build time (visible to
+              anyone who views page source), so putting a real admin
+              password there would hand out full admin access to every
+              visitor. A dedicated "analyst"-role demo account (created via
+              the same self-serve /auth/signup every real user goes through)
+              costs nothing if its password leaks -- that's the whole point
+              of it existing. Falls back to the local dev seed
+              (admin@ulpf.local / local-demo-admin-pw, from
+              backend/scripts/run_local_demo.py) when the env vars are
+              unset, so `npm run dev` still works out of the box. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: '0.25rem 0' }}>
+            <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.12)' }} />
+            <span style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', letterSpacing: '0.05em' }}>OR</span>
+            <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.12)' }} />
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setLoginEmail(import.meta.env.VITE_DEMO_EMAIL || 'admin@ulpf.local')
+              setLoginPassword(import.meta.env.VITE_DEMO_PASSWORD || 'local-demo-admin-pw')
+            }}
+            style={{
+              width: '100%', padding: '0.7rem 1rem', borderRadius: '0.75rem',
+              background: 'rgba(255,255,255,0.06)', border: '1px dashed rgba(255,255,255,0.25)',
+              color: 'rgba(255,255,255,0.85)', fontSize: '0.8rem', fontWeight: 600,
+              cursor: 'pointer', transition: 'background 0.18s ease',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.1)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.06)' }}
+          >
+            Fill Demo Credentials
+          </button>
         </div>
       ) : (
         // Sign Up form
