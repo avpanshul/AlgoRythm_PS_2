@@ -750,9 +750,10 @@ export default function LandingPage() {
           paddingLeft: 'clamp(1rem, 4vw, 5rem)',
           paddingRight: 'clamp(1rem, 4vw, 5rem)',
           paddingTop: 'clamp(1rem, 2vh, 2.5rem)',
-          paddingBottom: 'clamp(1rem, 2vh, 2.5rem)'
+          paddingBottom: 'clamp(1rem, 2vh, 2.5rem)',
+          zIndex: 60,
         }}
-        className="relative z-10 flex-1 flex items-center justify-center w-full"
+        className="relative flex-1 flex items-center justify-center w-full"
       >
         {/* LANDING HERO STATE (Always visible) */}
         <div className="w-full grid grid-cols-1 lg:grid-cols-12 items-center animate-fade-in" style={{ gap: 'clamp(1rem, 2vw, 2rem)' }}>
