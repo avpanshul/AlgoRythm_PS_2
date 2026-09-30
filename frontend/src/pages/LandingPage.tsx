@@ -33,9 +33,9 @@ function InputField({ label, type, placeholder, value, onChange, onEnter }: { la
         onChange={e => onChange(e.target.value)}
         onKeyDown={e => e.key === 'Enter' && onEnter?.()}
         style={{
-          width: '100%', padding: '0.75rem 1rem', borderRadius: '0.75rem',
+          width: '100%', padding: '0.6rem 0.85rem', borderRadius: '0.7rem',
           background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)',
-          color: '#fff', fontSize: '0.875rem', outline: 'none',
+          color: '#fff', fontSize: '0.825rem', outline: 'none',
           transition: 'border-color 0.18s ease',
         }}
         onFocus={e => { (e.target as HTMLInputElement).style.borderColor = 'rgba(0,68,168,0.7)' }}
@@ -105,7 +105,7 @@ function AuthPanel({ navigate, redirectTo }: { navigate: (path: string) => void;
   }
 
   const btnBase: React.CSSProperties = {
-    width: '100%', padding: '1rem 1.25rem', borderRadius: '0.875rem',
+    width: '100%', padding: '0.85rem 1.1rem', borderRadius: '0.875rem',
     cursor: 'pointer', fontWeight: 700, letterSpacing: '0.08em',
     fontSize: 'clamp(0.8rem, 1vw, 0.95rem)',
     textTransform: 'uppercase' as const,
@@ -114,13 +114,13 @@ function AuthPanel({ navigate, redirectTo }: { navigate: (path: string) => void;
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', animation: 'fadeIn 0.35s ease forwards' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', animation: 'fadeIn 0.35s ease forwards' }}>
 
       {/* Title */}
       <div style={{ textAlign: 'center' }}>
         <h2 style={{
-          fontSize: 'clamp(2.6rem, 5vw, 3.8rem)', fontWeight: 900,
-          letterSpacing: '0.12em', color: '#ffffff', lineHeight: 1,
+          fontSize: 'clamp(1.8rem, 3vw, 2.4rem)', fontWeight: 900,
+          letterSpacing: '0.1em', color: '#ffffff', lineHeight: 1,
           fontFamily: 'Georgia, "Times New Roman", serif',
           textShadow: '0 2px 24px rgba(0,68,168,0.4)',
         }}>
@@ -128,7 +128,7 @@ function AuthPanel({ navigate, redirectTo }: { navigate: (path: string) => void;
         </h2>
 
         {/* Toggle link */}
-        <p style={{ marginTop: '0.6rem', fontSize: '0.875rem', color: 'rgba(255,255,255,0.85)', fontWeight: 400 }}>
+        <p style={{ marginTop: '0.4rem', fontSize: '0.8rem', color: 'rgba(255,255,255,0.85)', fontWeight: 400 }}>
           {mode === 'login' ? (
             <>Don't have an account yet?{' '}
               <button onClick={() => setMode('signup')} style={{ background: 'none', border: 'none', color: '#60a5fa', fontWeight: 600, cursor: 'pointer', fontSize: 'inherit', padding: 0 }}>
@@ -146,7 +146,7 @@ function AuthPanel({ navigate, redirectTo }: { navigate: (path: string) => void;
       </div>
 
       {mode === 'login' ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
 
           <InputField label="Work Email / Organization Email" type="email" placeholder="analyst@soc-domain.com" value={loginEmail} onChange={setLoginEmail} onEnter={submitLogin} />
           <InputField label="Password" type="password" placeholder="••••••••••••" value={loginPassword} onChange={setLoginPassword} onEnter={submitLogin} />
@@ -210,7 +210,7 @@ function AuthPanel({ navigate, redirectTo }: { navigate: (path: string) => void;
         </div>
       ) : (
         // Sign Up form
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
           <InputField label="Full Name" type="text" placeholder="Alex Mercer" value={signupName} onChange={setSignupName} onEnter={submitSignup} />
           <InputField label="Work Email" type="email" placeholder="alex@soc-domain.com" value={signupEmail} onChange={setSignupEmail} onEnter={submitSignup} />
           <InputField label="Password (min. 8 characters)" type="password" placeholder="••••••••••••" value={signupPassword} onChange={setSignupPassword} onEnter={submitSignup} />
@@ -871,8 +871,8 @@ export default function LandingPage() {
             position: 'fixed',
             top: '50%',
             right: 'clamp(2rem, 5vw, 6rem)',
-            width: 'clamp(340px, 35vw, 440px)',
-            maxHeight: '92vh',
+            width: 'clamp(300px, 26vw, 380px)',
+            maxHeight: '88vh',
             zIndex: 50,
             transform: isSignInActive ? 'translateY(-50%) translateX(0)' : 'translateY(-50%) translateX(100px)',
             opacity: isSignInActive ? 1 : 0,
@@ -894,7 +894,7 @@ export default function LandingPage() {
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center',
-            padding: 'clamp(2.5rem, 4vh, 3rem) clamp(1.75rem, 3vw, 2.5rem)',
+            padding: 'clamp(1.5rem, 2.5vh, 2rem) clamp(1.25rem, 2vw, 1.75rem)',
             position: 'relative',
             overflow: 'hidden',
           }}>
