@@ -223,7 +223,7 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav style={{ flex: 1, overflowY: 'auto', padding: 'clamp(8px, 0.8vh, 12px) clamp(8px, 0.8vw, 12px)' }}>
+      <nav style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 'clamp(8px, 0.8vh, 12px) clamp(8px, 0.8vw, 12px)' }}>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#8999b0', padding: '8px 12px 4px' }}>
           MENU
         </div>

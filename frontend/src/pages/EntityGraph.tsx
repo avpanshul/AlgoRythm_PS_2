@@ -65,7 +65,7 @@ export default function EntityGraph() {
 
       {graphData.nodes.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 320px' : '1fr', gap: 16 }}>
-          <GlassCard style={{ padding: 0, overflow: 'hidden', height: 560 }}>
+          <GlassCard style={{ padding: 0, overflow: 'hidden', height: 420 }}>
             <ForceGraph2D
               graphData={graphData}
               nodeId="id"
@@ -77,7 +77,7 @@ export default function EntityGraph() {
               linkDirectionalArrowLength={4}
               onNodeClick={(n: any) => setSelected(n)}
               onNodeRightClick={(n: any) => setPivot(n.id)}
-              height={560}
+              height={420}
             />
           </GlassCard>
           {selected && (

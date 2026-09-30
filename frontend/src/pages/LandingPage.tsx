@@ -703,7 +703,7 @@ export default function LandingPage() {
                 style={{ fontSize: 'clamp(0.6rem, 0.75vw, 0.85rem)', color: '#000000' }}
                 className="font-mono font-bold tracking-widest uppercase pt-0.5"
               >
-                Secure Analytics Normalization Real-Time Threat Detection
+                Secure Analytics Normalization Keyed Event Telemetry
               </span>
             </div>
           </Link>
@@ -871,6 +871,7 @@ export default function LandingPage() {
             top: '50%',
             right: 'clamp(2rem, 5vw, 6rem)',
             width: 'clamp(340px, 35vw, 440px)',
+            maxHeight: '92vh',
             zIndex: 50,
             transform: isSignInActive ? 'translateY(-50%) translateX(0)' : 'translateY(-50%) translateX(100px)',
             opacity: isSignInActive ? 1 : 0,
@@ -878,6 +879,7 @@ export default function LandingPage() {
             transition: 'all 0.45s cubic-bezier(0.32, 0.72, 0, 1)',
             display: 'flex',
             flexDirection: 'column',
+            overflowY: 'auto',
           }}
         >
           {/* Frosted glass panel floating box */}
