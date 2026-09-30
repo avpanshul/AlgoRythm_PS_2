@@ -806,17 +806,17 @@ export default function LandingPage() {
             <div style={{ display: 'flex', gap: 'clamp(1.5rem, 3vw, 3rem)', alignItems: 'center', paddingTop: '0.25rem', flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <span style={{ fontSize: 'clamp(1.4rem, 2.2vw, 2rem)', fontWeight: 900, color: '#0044A8', letterSpacing: '-0.03em', lineHeight: 1 }}>14.2B</span>
-                <span style={{ fontSize: 'clamp(0.65rem, 0.8vw, 0.75rem)', color: '#8999b0', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Events / day</span>
+                <span style={{ fontSize: 'clamp(0.65rem, 0.8vw, 0.75rem)', color: '#5a6b85', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Events / day</span>
               </div>
               <div style={{ width: 1, height: 36, background: 'rgba(0,68,168,0.15)' }} />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <span style={{ fontSize: 'clamp(1.4rem, 2.2vw, 2rem)', fontWeight: 900, color: '#0044A8', letterSpacing: '-0.03em', lineHeight: 1 }}>99.98%</span>
-                <span style={{ fontSize: 'clamp(0.65rem, 0.8vw, 0.75rem)', color: '#8999b0', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Delivery Accuracy</span>
+                <span style={{ fontSize: 'clamp(0.65rem, 0.8vw, 0.75rem)', color: '#5a6b85', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Delivery Accuracy</span>
               </div>
               <div style={{ width: 1, height: 36, background: 'rgba(0,68,168,0.15)' }} />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <span style={{ fontSize: 'clamp(1.4rem, 2.2vw, 2rem)', fontWeight: 900, color: '#0044A8', letterSpacing: '-0.03em', lineHeight: 1 }}>45k EPS</span>
-                <span style={{ fontSize: 'clamp(0.65rem, 0.8vw, 0.75rem)', color: '#8999b0', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Ingest Throughput</span>
+                <span style={{ fontSize: 'clamp(0.65rem, 0.8vw, 0.75rem)', color: '#5a6b85', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Ingest Throughput</span>
               </div>
             </div>
 
