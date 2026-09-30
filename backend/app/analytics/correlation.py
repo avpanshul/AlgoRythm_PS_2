@@ -31,6 +31,21 @@ from app.models.all import NormalizedEvent, CorrelatedIncident, CorrelationRule
 
 RULES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "correlation_rules")
 
+# Real bug found live: evaluate_rule() below used to load every matching
+# NormalizedEvent row with no LIMIT, every single 30s live_detection cycle,
+# forever. That was survivable at small event counts but became the actual
+# cause of continuous OOM-kill-restart cycling once the real seeded dataset
+# grew past ~30k rows (confirmed via Render's own oomKilled events recurring
+# on a ~512MiB instance even with no bulk ingest running -- the routine
+# background cycle alone was the culprit). Capping to the most recent N
+# events by timestamp bounds memory per cycle regardless of how large the
+# table grows. This doesn't touch, delete, or reorder any stored data --
+# only how much of it one live background scan loads at once -- and rules'
+# window_minutes are all short (minutes to a couple hours), so real
+# multi-stage attacks are still fully captured; only correlation against
+# events older than this cap is skipped on a given cycle.
+EVAL_RECENT_EVENT_LIMIT = 8000
+
 
 def load_rules() -> list:
     rules = []
@@ -86,9 +101,11 @@ def evaluate_rule(db: Session, rule: dict, now: datetime = None) -> list:
     events = (
         db.query(NormalizedEvent)
         .filter(getattr(NormalizedEvent, correlate_by).isnot(None))
-        .order_by(NormalizedEvent.timestamp.asc())
+        .order_by(NormalizedEvent.timestamp.desc())
+        .limit(EVAL_RECENT_EVENT_LIMIT)
         .all()
     )
+    events.reverse()  # back to ascending order for the sliding-window logic below
 
     groups = defaultdict(list)
     for e in events:
