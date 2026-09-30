@@ -240,6 +240,23 @@ def seed_real_events(db: Session, limit: int = None, corpus_path: str = None, bu
         else:
             dlq_count += 1
 
+        # Real bug found live: this single Session runs for the whole
+        # 34,600-row bootstrap (main() opens it once, before calling this
+        # function 4 times), and SQLAlchemy's identity map holds a reference
+        # to every ORM object it ever loaded or created for the session's
+        # entire lifetime unless explicitly released. Confirmed via Render's
+        # own memory metrics: usage climbed linearly from 135MB to 465MB
+        # against this service's 512MB limit over ~30 minutes, then the
+        # process was OOM-killed and silently restarted mid-run (same
+        # instance ID, a fresh "Started server process" log line, no deploy,
+        # no server_failed event -- exactly what an out-of-process OOM
+        # killer looks like from here). expunge_all() detaches every object
+        # from the session (safe here: nothing after this point in the loop
+        # holds a reference to a prior iteration's rows), capping memory to
+        # roughly one batch's worth instead of the whole run's.
+        if (ok_count + dlq_count) % 200 == 0:
+            db.expunge_all()
+
     print(f"  -> {ok_count} NormalizedEvent rows, {dlq_count} DLQEvent rows, {skipped_count} already-seeded rows skipped")
     print(f"  -> format breakdown: {format_counts}")
     return {"ok": ok_count, "dlq": dlq_count, "skipped": skipped_count, "formats": format_counts}
