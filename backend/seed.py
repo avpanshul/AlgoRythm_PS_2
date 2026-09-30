@@ -39,6 +39,7 @@ builder script:
 """
 import os
 import sys
+import time
 import uuid
 import hashlib
 import json
@@ -256,6 +257,25 @@ def seed_real_events(db: Session, limit: int = None, corpus_path: str = None, bu
         # roughly one batch's worth instead of the whole run's.
         if (ok_count + dlq_count) % 200 == 0:
             db.expunge_all()
+
+        # Real bug found live, after the memory fix above: this loop runs on
+        # a background thread (app/api/v1/admin.py's bootstrap endpoint,
+        # since 34k+ rows would exceed any HTTP request timeout), but Python
+        # threads share one GIL -- a long CPU-bound stretch with no I/O wait
+        # (confirmed via Render's own CPU metrics: pegged at this service's
+        # 0.15 vCPU cap continuously for 8+ minutes with zero log output,
+        # coinciding with a run of BGL_2k.log lines that end in long runs of
+        # repeated dots) can starve the main asyncio thread of GIL time
+        # entirely, including the Dockerfile's own /api/v1/health
+        # HEALTHCHECK request handler -- which is exactly what a "same
+        # instance ID gets a fresh 'Started server process' log line with no
+        # deploy and no server_failed event" restart looks like from the
+        # outside. time.sleep(0) forces a GIL release without slowing this
+        # loop down in any way that matters (real per-row DB round-trips
+        # already dominate its running time), giving the health check a
+        # chance to actually run instead of queuing behind this thread
+        # indefinitely.
+        time.sleep(0)
 
     print(f"  -> {ok_count} NormalizedEvent rows, {dlq_count} DLQEvent rows, {skipped_count} already-seeded rows skipped")
     print(f"  -> format breakdown: {format_counts}")
