@@ -26,6 +26,31 @@ from app.services.spark_detection import run_spark_detection
 _stop_event = threading.Event()
 _thread = None
 
+# Real bug found live: this cycle's own two full-table scans
+# (correlation.py's evaluate_rule() queries every NormalizedEvent matching a
+# rule's field with no LIMIT at all; sentinel.py's update_all_profiles()
+# queries every not-yet-processed NormalizedEvent, also unbounded) run every
+# 30s regardless of what else the process is doing. Confirmed via Render's
+# own OOM events (oomKilled, memoryLimit 512Mi) recurring specifically
+# during a bulk real-data backfill: this background thread keeps firing
+# concurrently with the backfill's own DB writes, each cycle loading a
+# growing multi-thousand-row result set into memory in the same process
+# the backfill is already pushing close to its limit. Historical backfill
+# data doesn't need real-time propagation -- only genuinely new future
+# events do -- so this is pausable rather than needing evaluate_rule/
+# update_all_profiles themselves to be rewritten with proper batching
+# (a real, separate, larger fix noted in correlation.py's own docstring
+# as "not implemented yet").
+_paused = threading.Event()
+
+
+def pause_background_detection():
+    _paused.set()
+
+
+def resume_background_detection():
+    _paused.clear()
+
 
 def run_detection_cycle(db) -> dict:
     """One real pass: evaluate every correlation rule, update every Sentinel
@@ -81,6 +106,9 @@ def run_detection_cycle(db) -> dict:
 def _loop(interval_seconds: int):
     from app.core.database import SessionLocal
     while not _stop_event.is_set():
+        if _paused.is_set():
+            _stop_event.wait(interval_seconds)
+            continue
         try:
             db = SessionLocal()
             try:

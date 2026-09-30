@@ -264,12 +264,26 @@ _bootstrap_lock = _threading.Lock()
 
 def _run_bootstrap_seed():
     global _bootstrap_state
+    # Real OOM root cause found live: live_detection.py's always-on 30s
+    # background cycle does two full-table scans every single firing
+    # (correlation.py's evaluate_rule(), sentinel.py's
+    # update_all_profiles()), completely unbounded -- confirmed via Render's
+    # own oomKilled events recurring specifically while this bulk-seed
+    # thread runs, i.e. the two background loops sharing this one process's
+    # 512MB compete for memory at exactly the moment the DB they're both
+    # scanning is growing fastest. Pausing it for the duration of a bulk
+    # backfill (historical data doesn't need real-time propagation) is a
+    # real fix for the actual bug, not a workaround.
+    from app.services.live_detection import pause_background_detection, resume_background_detection
+    pause_background_detection()
     try:
         import seed as _seed
         _seed.main()
         _bootstrap_state = {"status": "done", "detail": None}
     except Exception as e:
         _bootstrap_state = {"status": "error", "detail": str(e)}
+    finally:
+        resume_background_detection()
 
 
 @router.post("/admin/oneoff-bootstrap-real-data")
@@ -311,6 +325,12 @@ _cloudtrail_lock = _threading.Lock()
 
 def _run_cloudtrail_seed():
     global _cloudtrail_state
+    # Same real OOM fix as _run_bootstrap_seed above: pause the always-on
+    # live_detection background thread (its two unbounded full-table scans
+    # compete for this process's 512MB with this seed thread's own DB
+    # writes) for the duration of this run.
+    from app.services.live_detection import pause_background_detection, resume_background_detection
+    pause_background_detection()
     try:
         import seed as _seed
         from app.core.database import SessionLocal
@@ -327,6 +347,8 @@ def _run_cloudtrail_seed():
             db.close()
     except Exception as e:
         _cloudtrail_state = {"status": "error", "detail": str(e)}
+    finally:
+        resume_background_detection()
 
 
 @router.post("/admin/oneoff-seed-cloudtrail")
