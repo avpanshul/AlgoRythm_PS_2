@@ -293,3 +293,53 @@ def oneoff_bootstrap_real_data(db: Session = Depends(get_db), current_user: User
 @router.get("/admin/oneoff-bootstrap-real-data/status")
 def oneoff_bootstrap_real_data_status(current_user: User = Depends(require_role("admin"))):
     return _bootstrap_state
+
+
+# seed.main() seeds loghub -> EVTX -> Zeek -> CloudTrail in that fixed order,
+# and the full bootstrap above stalled partway through EVTX (Render free-tier
+# OOM). CloudTrail is the only real corpus that's JSON-formatted -- with it
+# still unseeded, the dashboard's format-distribution panel honestly showed
+# 0% JSON, which looked like a bug but wasn't one. Rather than fabricate JSON
+# rows or delete already-seeded real ones to "fix" the percentage (both
+# explicitly ruled out), this seeds just that one real corpus (2,900 records,
+# small enough to plausibly fit in the memory headroom that a full-run resume
+# no longer has) directly, out of the main() order, using the same
+# dedup-safe seed_real_events() the full bootstrap already relies on.
+_cloudtrail_state = {"status": "idle", "detail": None}
+_cloudtrail_lock = _threading.Lock()
+
+
+def _run_cloudtrail_seed():
+    global _cloudtrail_state
+    try:
+        import seed as _seed
+        from app.core.database import SessionLocal
+        db = SessionLocal()
+        try:
+            result = _seed.seed_real_events(
+                db,
+                corpus_path=_seed.CLOUDTRAIL_CORPUS_PATH,
+                builder_module="build_cloudtrail_corpus",
+                label="AWS CloudTrail",
+            )
+            _cloudtrail_state = {"status": "done", "detail": result}
+        finally:
+            db.close()
+    except Exception as e:
+        _cloudtrail_state = {"status": "error", "detail": str(e)}
+
+
+@router.post("/admin/oneoff-seed-cloudtrail")
+def oneoff_seed_cloudtrail(current_user: User = Depends(require_role("admin"))):
+    with _cloudtrail_lock:
+        if _cloudtrail_state["status"] == "running":
+            raise HTTPException(status_code=409, detail="CloudTrail seed already running")
+        _cloudtrail_state["status"] = "running"
+        _cloudtrail_state["detail"] = None
+        _threading.Thread(target=_run_cloudtrail_seed, daemon=True).start()
+    return {"status": "started"}
+
+
+@router.get("/admin/oneoff-seed-cloudtrail/status")
+def oneoff_seed_cloudtrail_status(current_user: User = Depends(require_role("admin"))):
+    return _cloudtrail_state
