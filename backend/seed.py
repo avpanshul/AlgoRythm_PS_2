@@ -211,6 +211,14 @@ def seed_real_events(db: Session, limit: int = None, corpus_path: str = None, bu
         # loop safely resumable, not just safely re-runnable from empty.
         if db.query(RawEventMetadata).filter(RawEventMetadata.raw_sha256 == raw_sha256).first():
             skipped_count += 1
+            # Real gap in the GIL-yield fix below: `continue` here jumps
+            # straight past it, so a resume's skip-phase (potentially tens
+            # of thousands of iterations re-checking already-seeded rows
+            # before reaching new ones) never yielded the GIL at all -- the
+            # exact same healthcheck-starvation restart this was meant to
+            # prevent, just moved earlier in the run.
+            if skipped_count % 200 == 0:
+                time.sleep(0)
             continue
 
         event_id = f"evt_{uuid.uuid4().hex}"
