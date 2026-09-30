@@ -191,6 +191,18 @@ def seed_real_events(db: Session, limit: int = None, corpus_path: str = None, bu
 
     print(f"Seeding {len(rows)} real {label} events through the real pipeline...")
 
+    # Real bug found live: checking dedup via one indexed DB round-trip per
+    # row was itself the bottleneck a resume needs to burn through before
+    # reaching new rows (tens of thousands of already-seeded rows on a
+    # resume, each a separate query on a badly CPU/IO-throttled free-tier
+    # host) -- slow enough on its own to be the very CPU-bound stretch that
+    # starved this thread's own healthcheck-serving sibling and got it
+    # restarted mid-skip-phase. One query for the whole already-seeded set
+    # up front turns "N round-trips" into "1 round-trip + N in-memory set
+    # lookups", which is what actually fixes the slowness -- the GIL-yield
+    # fixes below remain as defense in depth, not the primary fix.
+    existing_hashes = {row[0] for row in db.query(RawEventMetadata.raw_sha256).all()}
+
     format_counts = {}
     ok_count = 0
     dlq_count = 0
@@ -209,7 +221,7 @@ def seed_real_events(db: Session, limit: int = None, corpus_path: str = None, bu
         # double every already-seeded row. Same dedup-by-raw_sha256 pattern
         # auto_ingest.py already uses for exactly this reason -- makes this
         # loop safely resumable, not just safely re-runnable from empty.
-        if db.query(RawEventMetadata).filter(RawEventMetadata.raw_sha256 == raw_sha256).first():
+        if raw_sha256 in existing_hashes:
             skipped_count += 1
             # Real gap in the GIL-yield fix below: `continue` here jumps
             # straight past it, so a resume's skip-phase (potentially tens
@@ -239,6 +251,7 @@ def seed_real_events(db: Session, limit: int = None, corpus_path: str = None, bu
         )
         db.add(metadata)
         db.commit()
+        existing_hashes.add(raw_sha256)
 
         norm_event = process_raw_event(db, event_id, raw_log, source_id, raw_sha256, raw_location)
 
