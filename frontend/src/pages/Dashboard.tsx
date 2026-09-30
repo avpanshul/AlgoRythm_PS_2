@@ -53,7 +53,7 @@ function GlossRing({ value, max = 100, color = '#0044A8', size = 80, label }: {
         <circle cx={size / 2} cy={size / 2} r={radius} fill="none"
           stroke={color} strokeWidth={8} strokeLinecap="round"
           strokeDasharray={`${animDash} ${circumference}`}
-          style={{ transition: 'stroke-dasharray 1s cubic-bezier(0.34, 1.56, 0.64, 1)', filter: `drop-shadow(0 0 4px ${color}60)` }}
+          style={{ transition: 'stroke-dasharray 1s cubic-bezier(0.25,1,0.5,1)', filter: `drop-shadow(0 0 4px ${color}60)` }}
         />
       </svg>
       <div style={{
