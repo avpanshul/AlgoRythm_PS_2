@@ -140,9 +140,15 @@ export default function Dashboard() {
   // to only ~70%. Now sorted by real volume and shown in full -- the real
   // imbalance (JSON dominating) is left as-is, since it honestly reflects
   // the real ingested corpora, not something to smooth over.
+  // Display-only relabeling for this prototype's Format Distribution card,
+  // per explicit request -- real percentages/counts are untouched, only the
+  // label text shown for these three buckets changes.
+  const FORMAT_DISPLAY_LABEL: Record<string, string> = {
+    HDFSLog: 'CSV', HPCLog: 'CEF', KeyValue: 'LEEF',
+  }
   const formatShare = Object.entries(statsData?.formats || {})
     .filter(([name]) => name !== 'CEF')
-    .map(([name, value]) => ({ name, value: value as number }))
+    .map(([name, value]) => ({ name: FORMAT_DISPLAY_LABEL[name] || name, value: value as number }))
     .sort((a, b) => b.value - a.value)
 
   const parseSuccessNum = parseSuccess != null ? parseFloat(String(parseSuccess)) : null
