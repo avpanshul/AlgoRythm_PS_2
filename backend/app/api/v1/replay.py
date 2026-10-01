@@ -80,10 +80,15 @@ def _run_replay_job(job_id: int):
 
             # Untouched raw evidence in, corrected parser out -- raw_sha256 and
             # raw_location are passed straight through, never recomputed.
+            # deliver=False: this is a replay of an already-existing event
+            # (corrected parser, same raw evidence), not a new event "just
+            # happening" -- it already went through real-time delivery once
+            # when it was first ingested.
             process_raw_event(
                 db, meta.event_id, raw_content, meta.source_id or "UNKNOWN",
                 meta.raw_sha256, meta.raw_location,
                 parser_version=job.new_parser_version,
+                deliver=False,
             )
             db.commit()
 

@@ -890,10 +890,20 @@ def process_raw_event(
     raw_location: str,
     parser_id: Optional[str] = None,
     parser_version: Optional[str] = None,
+    deliver: bool = True,
 ) -> Optional[NormalizedEvent]:
     """
     Full synchronous processing pipeline.
     Returns NormalizedEvent on success, creates DLQEvent on failure.
+
+    `deliver` controls real-time downstream delivery (webhook export +
+    OpenSearch indexing, app/services/event_delivery.py) of this event after
+    it commits. Default True for real-time ingestion (the actual use case
+    for "push this to my SIEM the moment it happens"). seed.py's bulk
+    historical backfill passes deliver=False explicitly -- firing tens of
+    thousands of webhook/OpenSearch calls for a one-time historical reseed
+    would flood a demo endpoint and add real load to a process already
+    memory-constrained, for events that aren't actually "just happening".
     """
     try:
         # 1. Detect format
@@ -1098,6 +1108,11 @@ def process_raw_event(
         # volume outgrows it.
         if settings.AUTO_CHECKPOINT_EVERY_EVENT:
             integrity_service.create_checkpoint(db)
+
+        if deliver:
+            from app.services.event_delivery import deliver_to_webhooks, index_to_opensearch
+            deliver_to_webhooks(db, canonical)
+            index_to_opensearch(canonical)
 
         return norm_event
 

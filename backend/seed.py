@@ -253,7 +253,12 @@ def seed_real_events(db: Session, limit: int = None, corpus_path: str = None, bu
         db.commit()
         existing_hashes.add(raw_sha256)
 
-        norm_event = process_raw_event(db, event_id, raw_log, source_id, raw_sha256, raw_location)
+        # deliver=False: this is a historical bulk backfill, not a live
+        # event "just happening" -- see process_raw_event's own docstring
+        # for why firing tens of thousands of webhook/OpenSearch calls here
+        # would be wrong (flood a demo endpoint, add real load to an
+        # already memory-constrained process).
+        norm_event = process_raw_event(db, event_id, raw_log, source_id, raw_sha256, raw_location, deliver=False)
 
         if norm_event is not None:
             ok_count += 1
