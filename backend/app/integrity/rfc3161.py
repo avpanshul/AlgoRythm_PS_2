@@ -46,6 +46,13 @@ def request_timestamp(message: bytes) -> dict:
     status="failed", not treated as fatal to checkpoint creation."""
     if not is_configured():
         return {"status": "not_configured"}
+    if settings.AIRGAPPED_MODE:
+        # Defense in depth, not the primary guard: is_configured() above
+        # already means this never fires unless RFC3161_TSA_URL was
+        # deliberately set (a real external TSA by nature), but an
+        # air-gapped deployment should refuse that attempt outright rather
+        # than rely solely on an operator remembering to leave it unset.
+        return {"status": "blocked_airgapped"}
 
     try:
         import rfc3161ng

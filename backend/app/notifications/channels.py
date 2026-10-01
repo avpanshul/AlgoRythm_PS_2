@@ -68,6 +68,12 @@ class SMSChannel(NotificationChannel):
                        "deployment, so nothing was sent -- this is recorded honestly rather than "
                        "claiming delivery that didn't happen.",
             )
+        if settings.AIRGAPPED_MODE:
+            # Defense in depth: a real SMS gateway is, by nature, an
+            # external service reachable over the real internet/telecom
+            # network, never something inside an air-gapped boundary.
+            log.warning("SMS to %s not sent -- AIRGAPPED_MODE blocks real external SMS gateways", address)
+            return SendResult(status="not_configured", detail="AIRGAPPED_MODE is enabled; real external SMS delivery is blocked.")
 
         import requests  # lazy: only needed when a real gateway is actually configured
 

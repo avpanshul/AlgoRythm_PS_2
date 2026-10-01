@@ -95,7 +95,16 @@ Return a JSON object with exactly these keys:
             # Ollama (the original behavior, for real local installs) when
             # no key is set, so this is purely additive, never a regression
             # for anyone already running a local Ollama server.
-            if settings.GROQ_API_KEY:
+            #
+            # AIRGAPPED_MODE check: Groq is a real external cloud API --
+            # inherently incompatible with an air-gapped install by
+            # definition, unlike OLLAMA_URL, which in a real docker-compose
+            # deployment points at the `ollama` container on the same
+            # internal network (never leaves the air-gapped boundary). A
+            # genuinely air-gapped deployment should keep using local Ollama
+            # even if a GROQ_API_KEY happens to be set (e.g. leftover from a
+            # non-air-gapped config), not silently reach out to the internet.
+            if settings.GROQ_API_KEY and not settings.AIRGAPPED_MODE:
                 return self._ask_groq(system, user)
             return self._ask_ollama(system, user)
         except Exception as e:

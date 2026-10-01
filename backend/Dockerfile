@@ -15,6 +15,20 @@ RUN pip install torch torchvision torchaudio --index-url https://download.pytorc
 
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Real air-gap blocker found live: app/ai/embeddings.py's EmbeddingEngine
+# instantiates SentenceTransformer(settings.EMBEDDING_MODEL) at import time,
+# which downloads the model from HuggingFace Hub on first use if it isn't
+# already cached on disk -- silently breaking in a genuinely air-gapped
+# deployment (no error until something actually triggers that import path,
+# then a hang/failure reaching huggingface.co). Pre-downloading it here, at
+# build time (when the builder legitimately has network access), bakes the
+# weights into this image layer so no network call happens at runtime
+# regardless of AIRGAPPED_MODE. HF_HOME pinned to a path under /app so the
+# cache is both inside this layer and readable by the non-root `ulpf` user
+# created below.
+ENV HF_HOME=/app/.cache/huggingface
+RUN python -c "import os; from sentence_transformers import SentenceTransformer; SentenceTransformer(os.environ.get('EMBEDDING_MODEL', 'all-MiniLM-L6-v2'))"
+
 COPY . .
 
 ENV PYTHONPATH=/app

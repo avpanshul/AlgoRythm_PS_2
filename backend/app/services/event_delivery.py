@@ -45,7 +45,16 @@ def deliver_to_webhooks(db: Session, canonical: dict) -> None:
     configured URL. One real HTTP call per configured webhook, per event --
     short timeout, never raises, never queues. `last_test_at`/
     `last_test_result` are updated with the real outcome so the Integrations
-    page reflects genuine delivery history, not a static "configured" label."""
+    page reflects genuine delivery history, not a static "configured" label.
+
+    AIRGAPPED_MODE skips this entirely: a webhook's configured URL is
+    arbitrary operator input, unlike OPENSEARCH_URL/OLLAMA_URL which in a
+    real docker-compose deployment point at containers on the same internal
+    network. There's no way to know from here whether a given webhook URL
+    stays inside an air-gapped network or reaches out to the real internet,
+    so the safe default is to not attempt it at all."""
+    if settings.AIRGAPPED_MODE:
+        return
     webhooks = db.query(Integration).filter(Integration.type == "webhook", Integration.enabled == True).all()  # noqa: E712
     if not webhooks:
         return
