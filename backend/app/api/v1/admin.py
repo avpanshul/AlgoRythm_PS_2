@@ -2,7 +2,7 @@
 import secrets
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -415,3 +415,26 @@ def oneoff_seed_zeek(current_user: User = Depends(require_role("admin"))):
 @router.get("/admin/oneoff-seed-zeek/status")
 def oneoff_seed_zeek_status(current_user: User = Depends(require_role("admin"))):
     return _zeek_state
+
+
+# Temporary, secret-gated admin password reset -- the real admin password
+# was lost (set once via ADMIN_INITIAL_PASSWORD at bootstrap, never
+# persisted anywhere readable afterward, and Render doesn't expose existing
+# env var values back to API callers by design). Gated by a header matching
+# ADMIN_RESET_SECRET (a fresh random value, set via the same env-var write
+# access already used throughout this deployment) rather than requiring the
+# admin role itself -- that's the whole point, there is no admin session to
+# authorize this with otherwise. Meant to be deleted immediately after one
+# real use, same convention as this file's other oneoff-* endpoints.
+@router.post("/admin/oneoff-reset-admin-password")
+def oneoff_reset_admin_password(x_reset_secret: str = Header(...), db: Session = Depends(get_db)):
+    if not settings.ADMIN_RESET_SECRET or x_reset_secret != settings.ADMIN_RESET_SECRET:
+        raise HTTPException(status_code=403, detail="Invalid reset secret")
+    admin = db.query(User).filter(User.email == settings.ADMIN_INITIAL_EMAIL).first()
+    if not admin:
+        raise HTTPException(status_code=404, detail=f"No user found with email {settings.ADMIN_INITIAL_EMAIL}")
+    admin.password_hash = hash_password(settings.ADMIN_RESET_NEW_PASSWORD)
+    admin.failed_login_attempts = 0
+    admin.locked_until = None
+    db.commit()
+    return {"status": "reset", "email": admin.email}

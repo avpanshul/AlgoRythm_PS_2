@@ -141,6 +141,13 @@ class Settings(BaseSettings):
     ADMIN_INITIAL_EMAIL: str = os.getenv("ADMIN_INITIAL_EMAIL", "admin@ulpf.local")
     ADMIN_INITIAL_PASSWORD: str = os.getenv("ADMIN_INITIAL_PASSWORD", "")
 
+    # Temporary admin-password-reset mechanism (app/api/v1/admin.py's
+    # oneoff-reset-admin-password). Both unset by default -- the reset
+    # endpoint hard-fails unless ADMIN_RESET_SECRET is explicitly set,
+    # so this stays fully inert unless deliberately activated.
+    ADMIN_RESET_SECRET: str = os.getenv("ADMIN_RESET_SECRET", "")
+    ADMIN_RESET_NEW_PASSWORD: str = os.getenv("ADMIN_RESET_NEW_PASSWORD", "")
+
     # CORS - explicit origin allowlist (required when allow_credentials=True; browsers
     # reject a wildcard "*" origin combined with credentials anyway).
     # Real bug found live: the merged frontend-handoff dev server landed on
