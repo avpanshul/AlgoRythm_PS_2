@@ -154,7 +154,23 @@ def update_all_profiles(db: Session) -> dict:
     # batch until the session is flushed, so it would create -- and then try
     # to bulk-insert -- multiple EntityProfile rows for the same entity_id,
     # violating the primary key at commit time.
-    existing = {p.entity_id: p for p in db.query(EntityProfile).all()}
+    #
+    # Real bug found live (confirmed via Render's own oomKilled events
+    # recurring hours after the correlation.py fix): this used to load EVERY
+    # EntityProfile row, every 30s cycle, regardless of whether that entity
+    # had any new events this cycle -- growing unbounded as more unique
+    # source_ips accumulate in the real data (each profile also carries
+    # known_peers/known_dest_ports/reason_log, so this isn't a cheap row).
+    # `events` above is already the real bounded driving set (only
+    # not-yet-processed rows); scoping the profile cache to just the
+    # entities that actually appear in it keeps the same correctness
+    # (same dedup-by-entity_id guarantee) while bounding memory to this
+    # cycle's actual work instead of the whole profile table's history.
+    needed_entity_ids = {e.source_ip for e in events}
+    existing = (
+        {p.entity_id: p for p in db.query(EntityProfile).filter(EntityProfile.entity_id.in_(needed_entity_ids)).all()}
+        if needed_entity_ids else {}
+    )
 
     updated = Counter()
     now = datetime.now(timezone.utc)
