@@ -2,6 +2,19 @@
 
 > Cross-references: [`01_PROJECT_OVERVIEW.md`](01_PROJECT_OVERVIEW.md), [`02_SYSTEM_ARCHITECTURE.md`](02_SYSTEM_ARCHITECTURE.md), [`03_FEATURES_TECH_STACK_AND_DATA.md`](03_FEATURES_TECH_STACK_AND_DATA.md), [`04_TESTING_AND_VERIFICATION.md`](04_TESTING_AND_VERIFICATION.md).
 
+## Update — 2026-10-01 (live deployment session)
+
+Everything below this point is the original audit, kept as-written for its historical findings. Since it was written, the project has actually been pushed to GitHub and deployed live (Render backend + Vercel frontend) — the §12 "NOT READY for a GitHub push" verdict below is **no longer current for those two specific reasons** (the push already happened; the deployment is live). The other original blockers (git hygiene at the time, the two failing tests, zero MFA/lockout/ingest-token test coverage) were **not** re-verified in this update and should still be treated as open unless re-checked.
+
+Real, verified changes since this audit:
+- **`AIRGAPPED_MODE` now actually enforces something.** The original audit (§3, §8) repeated the config default (`true`) and the project's own doc claim that it "blocks non-essential outbound calls" — that claim was false at the time; the flag was declared but never checked anywhere in the code. It now hard-blocks the Groq LLM fallback, webhook delivery, RFC3161 timestamping, and SMS when enabled.
+- **A real air-gap blocker was found and fixed**: the sentence-transformers embedding model downloaded from HuggingFace Hub at runtime on first use if not cached — silently breaking a genuinely air-gapped install. It's now pre-downloaded at Docker build time and baked into the image.
+- **OpenSearch / MinIO** (§1, listed as "not exercised"): OpenSearch indexing is now real, wired code (`app/services/event_delivery.py`), called on every real-time-ingested event. Still not demoable on the live Render deployment specifically (no OpenSearch instance hosted there), but functionally real — demoable via `docker compose up`.
+- **Webhook export**, previously nonexistent, is now real and was verified live end-to-end: a real event was ingested, delivered to a real external endpoint, and the delivery was confirmed received within ~100ms.
+- **A real, previously-undocumented security bug was found and fixed**: the Multi-CSE Supervisory rollup endpoint (`/supervisory/organizations`) had no authentication at all — confirmed via a direct unauthenticated call to the live production API returning real cross-org data. Now requires login, same as every other sensitive router.
+- **`sbom/ulpf-dev-signing-key.asc`** (flagged in §7/§9 below as unconfirmed secret-exposure risk): verified in this update to be a PGP **public** key block (`-----BEGIN PGP PUBLIC KEY BLOCK-----`, no private-key marker) — public keys are meant to be distributed, so this specific file is not actually a leak. The other two paths named alongside it (`deploy/dev-ca/*.key`, `deploy/k8s/02-secret.yaml`) are correctly `.gitignore`d and were never tracked.
+- **Real LLM field-mapping fallback added** (Groq, hosted API) — not present at all when this audit was written. See `03_FEATURES_TECH_STACK_AND_DATA.md`.
+
 ## 1. Integration matrix
 
 | Integration point | Status | Evidence |

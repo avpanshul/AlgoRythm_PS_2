@@ -126,6 +126,7 @@ See doc 02 §8 for exactly which pipeline stage each touches. Summary of maturit
 | Drain3 clustering | In production path |
 | Embedding similarity (field mapping) | In production path (onboarding only) |
 | Ollama LLM (field mapping) | In production path (onboarding only, fallback of a fallback) |
+| Groq hosted LLM (field mapping) | **Added 2026-10-01.** Real gap found live: this deployment has no reachable Ollama server (no process actually running at `OLLAMA_URL`), so the LLM fallback above silently produced `UNKNOWN`/0% confidence in production. `app/ai/llm.py` now tries a real hosted API (Groq, OpenAI-compatible) first when `GROQ_API_KEY` is set, falling back to the original Ollama behavior otherwise — purely additive, no regression for a real local Ollama install. Blocked under `AIRGAPPED_MODE` (a real external cloud API, unlike `OLLAMA_URL`, which in a real docker-compose deployment points at a container on the same internal network). Verified live against real unrecognized Zeek field names (`id.orig_h` → `source.ip`, 0.99 confidence, correct reasoning). |
 | Sentinel behavioral profiling | In production path (background cycle) |
 | Event-risk classifier | Built, evaluated, **not integrated** — a real 100% test-accuracy result was traced to a format confound (a real benign Windows Event Log record scored 99.93% "malicious") and deliberately not shipped |
 | LinUCB triage bandit | Built, offline-validated against real public data, **not in production** — correctly blocked on needing this system's own real case-triage history |

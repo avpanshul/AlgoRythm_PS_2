@@ -20,6 +20,9 @@ Sign in with the **"Fill Demo Credentials"** button on the login page (a real, l
 - **Privacy policies & retention** — configurable redaction rules and per-source retention windows, with legal-hold support
 - **Threat intelligence** — indicator matching against ingested events
 - **Live detection loop** — a background cycle that runs correlation + Sentinel continuously (not just on manual request) and auto-opens Cases with notifications for high/critical findings
+- **SIEM / Data Lake delivery** (`app/services/event_delivery.py`) — real-time webhook export and OpenSearch indexing for every newly-ingested event, skipped for bulk/historical backfills
+- **Multi-CSE Supervisory view** — aggregate-only cross-organization rollup (event counts, avg risk, avg quality) for oversight across multiple real organizations without exposing another org's raw per-event detail
+- **Air-gapped mode** (`AIRGAPPED_MODE`, default `true`) — hard-blocks every real external network call (hosted LLM fallback, webhook delivery, RFC3161 timestamping, SMS) when enabled; the embedding model used for field mapping is pre-baked into the Docker image at build time so it needs no network at runtime either
 
 ---
 
@@ -97,6 +100,8 @@ Set these in `backend/.env` (Docker Compose) or your shell (local demo already s
 | `ADMIN_INITIAL_EMAIL` / `ADMIN_INITIAL_PASSWORD` | `admin@ulpf.local` / — | If `ADMIN_INITIAL_PASSWORD` is set, an admin account is bootstrapped on first startup (only if no users exist yet) |
 | `CORS_ORIGINS` | `http://localhost:5173,http://localhost:5174,http://localhost:3000` | Comma-separated allowlist |
 | `OLLAMA_URL` / `OLLAMA_MODEL` / `OLLAMA_TIMEOUT_SECONDS` | `http://localhost:11434` / `llama3.2:latest` / `90` | LLM-assisted field mapping; falls back gracefully to `UNKNOWN` if unreachable |
+| `GROQ_API_KEY` / `GROQ_MODEL` / `GROQ_TIMEOUT_SECONDS` | — / `openai/gpt-oss-20b` / `20` | Real hosted LLM fallback for field mapping (tried before Ollama when set) — no local model, no extra memory footprint. Ignored under `AIRGAPPED_MODE=true` |
+| `AIRGAPPED_MODE` | `true` | Blocks Groq, webhook delivery, RFC3161 timestamping, and SMS. Set to `false` for an internet-connected deployment that should actually use those |
 | `INGEST_BACKEND` | `sync` | `sync` processes events immediately in the request handler; `kafka` defers normalization/scoring to the worker via Redpanda |
 | `KAFKA_BROKERS` | `localhost:9092` | Only relevant if `INGEST_BACKEND=kafka` |
 | `MINIO_ENDPOINT` / `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | `localhost:9000` / `admin` / — | Raw event storage |
