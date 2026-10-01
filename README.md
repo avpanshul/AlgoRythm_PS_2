@@ -1,75 +1,145 @@
-# ULPF — Universal Log Pre-processing Framework
+# Sanket — Universal Log Pre-processing Framework (ULPF)
 
-**Smart India Hackathon — Problem Statement 26156**
+Sanket normalizes log data from any source format (Syslog, JSON, XML, CSV, CEF, LEEF, KeyValue, and more) into a single canonical schema, then runs real-time correlation, behavioral risk scoring, and cryptographic integrity sealing on top of it — before any of it reaches a dashboard or an analyst.
 
-ULPF ingests security logs from heterogeneous sources — firewalls, Windows Event Log, syslog appliances, cloud audit trails, application logs — detects the format automatically, normalizes every event into one canonical schema, redacts PII, scores risk, and makes the result cryptographically tamper-evident with an append-only Merkle tree and signed checkpoints. On top of that pipeline sits a full analyst application: correlation, entity behavior profiling, incident case management, attack-path reconstruction, threat hunting, and parser authoring.
+**Live demo:** https://algorhythm-ulpf-frontend.vercel.app
+**Backend API:** https://algorhythm-ulpf-backend.onrender.com (interactive docs at `/docs`)
 
-Live-verified at time of writing: **34,626 real ingested events, 99.9% parse success rate, 13 natively supported log formats.** Every dataset shipped is either real third-party log data with a checkable source, or explicitly labeled synthetic — nothing is fabricated to look more complete than it is.
+Sign in with the **"Fill Demo Credentials"** button on the login page (a real, low-privilege demo account), or create your own account via Sign Up.
 
-## Documentation
+---
 
-Full technical documentation lives in [`docs/`](docs/):
+## What's in here
 
-| Doc | Covers |
-|---|---|
-| [`01_PROJECT_OVERVIEW.md`](docs/01_PROJECT_OVERVIEW.md) | What this is, the problem, novelty, honest limitations, current status |
-| [`02_SYSTEM_ARCHITECTURE.md`](docs/02_SYSTEM_ARCHITECTURE.md) | Backend/frontend architecture, data flow, all routers and models |
-| [`03_FEATURES_TECH_STACK_AND_DATA.md`](docs/03_FEATURES_TECH_STACK_AND_DATA.md) | Full feature inventory, tech stack, supported formats, real datasets |
-| [`04_TESTING_AND_VERIFICATION.md`](docs/04_TESTING_AND_VERIFICATION.md) | Test strategy, results, and the full test matrix |
-| [`05_INTEGRATION_AND_DEPLOYMENT_READINESS.md`](docs/05_INTEGRATION_AND_DEPLOYMENT_READINESS.md) | Deployment checklist, env vars, integration matrix, go/no-go assessment |
+- **Ingestion & normalization** — HTTP, syslog (UDP/TCP, optional mTLS), and batch ingestion; deterministic + LLM-assisted field mapping to a common ECS-like schema
+- **Parser Lab** — write, test, version, and publish parsers for new log formats through a real approval workflow
+- **Correlation engine** (`app/analytics/correlation.py`) — YAML-defined, cross-source, multi-stage attack pattern rules
+- **Sentinel** (`app/ai/sentinel.py`) — per-entity behavioral risk profiling, fully explainable (every score change has a real reason log, never a black-box number)
+- **Attack Path reconstruction + Sparks** — real, time-ordered incident paths, auto-triggered by correlation matches or risk-score thresholds; advisory only, never predictive
+- **Integrity & Replay** — Merkle-tree event sealing with inclusion proofs, checkpointing, and reprocessing/replay jobs
+- **Privacy policies & retention** — configurable redaction rules and per-source retention windows, with legal-hold support
+- **Threat intelligence** — indicator matching against ingested events
+- **Live detection loop** — a background cycle that runs correlation + Sentinel continuously (not just on manual request) and auto-opens Cases with notifications for high/critical findings
+
+---
 
 ## Tech stack
 
-- **Backend:** FastAPI, SQLAlchemy 2, Alembic, PostgreSQL (SQLite for local dev)
-- **Frontend:** React 19, TypeScript, Vite, TanStack Query, Tailwind CSS
-- **Integrity:** RFC 6962 Merkle tree, Ed25519 / PKCS#11-HSM signed checkpoints, RFC 3161 trusted timestamps
-- **AI/ML:** Drain3 (log clustering), sentence-transformers, Ollama (local LLM assist), a real offline-validated LinUCB alert-triage bandit
+| Layer | Stack |
+|---|---|
+| Backend | FastAPI (Python 3.11), SQLAlchemy, PostgreSQL |
+| Frontend | React 19 + TypeScript, Vite, TanStack Query, Recharts |
+| Optional infra | Kafka-compatible ingestion (Redpanda), MinIO (raw event storage), OpenSearch, Redis, Ollama (LLM field mapping) |
+| Deployment | Render (backend + Postgres), Vercel (frontend) |
 
-See [`docs/03_FEATURES_TECH_STACK_AND_DATA.md`](docs/03_FEATURES_TECH_STACK_AND_DATA.md) for the full breakdown.
+---
 
-## Running it locally
+## Setup
+
+You have two options: a quick local demo with no Docker/Postgres required, or the full stack via Docker Compose.
+
+### Option A — Quick local demo (fastest, no Docker needed)
+
+Runs the whole backend against a local SQLite file instead of Postgres. Good for trying the UI without any infra setup.
 
 ```bash
-# Backend (SQLite-backed, no Docker/Postgres needed)
+# Backend
 cd backend
+python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 python scripts/run_local_demo.py
-# -> http://localhost:8000  (Swagger UI at /docs)
+```
 
-# Frontend, in a second terminal
+This starts the API on `http://localhost:8000` and creates an admin account:
+`admin@ulpf.local` / `local-demo-admin-pw`
+
+```bash
+# Frontend (separate terminal)
 cd frontend
 npm install
 npm run dev
-# -> http://localhost:5173
 ```
 
-Load real demo data (optional, not required to boot):
+Open `http://localhost:5173`. To load it with real sample data (loghub, Zeek, CloudTrail, EVTX corpora — see `backend/datasets/real/`), run:
 
 ```bash
 cd backend
 python seed.py
-python scripts/seed_vendor_packs.py
 ```
 
-Full setup detail, Docker Compose, and Kubernetes paths are in [`docs/05_INTEGRATION_AND_DEPLOYMENT_READINESS.md`](docs/05_INTEGRATION_AND_DEPLOYMENT_READINESS.md).
+### Option B — Full stack via Docker Compose
 
-## Deployment
+Brings up Postgres, MinIO, OpenSearch, Redis, Redpanda (Kafka-compatible), Ollama, the backend API, a background worker, the syslog listener, and the frontend — all together.
 
-Configured for **Render** (backend) and **Vercel** (frontend):
+```bash
+cp .env.example .env   # create this if it doesn't exist; see "Environment variables" below
+docker compose up --build
+```
 
-- `backend/Dockerfile` / `backend/Procfile` — respect Render's dynamic `$PORT`
-- `backend/app/core/config.py` — accepts a single `DATABASE_URL` (Render's managed Postgres format) or split `POSTGRES_*` vars
-- `frontend/vercel.json` — SPA routing rewrite for React Router
+- Frontend: `http://localhost:5173`
+- Backend API: `http://localhost:8000` (docs at `/docs`)
+- MinIO console: `http://localhost:9001`
+- OpenSearch Dashboards: `http://localhost:5601`
+- Syslog listener: UDP/TCP `5514`, mTLS TCP `6514` (opt-in, see `docs/PKI.md`)
 
-Required environment variables (`JWT_SECRET`, `CORS_ORIGINS`, `VITE_API_URL`, etc.) and a full pre-deploy checklist are documented in [`docs/05_INTEGRATION_AND_DEPLOYMENT_READINESS.md`](docs/05_INTEGRATION_AND_DEPLOYMENT_READINESS.md).
+---
+
+## Environment variables
+
+Set these in `backend/.env` (Docker Compose) or your shell (local demo already sets sane defaults for most of these).
+
+| Variable | Default | Notes |
+|---|---|---|
+| `DATABASE_URL` | — | Full Postgres connection string; takes priority over the individual `POSTGRES_*` vars if set (handles managed hosts like Render/Heroku) |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_HOST` / `POSTGRES_PORT` | `ulp` / — / `ulp_db` / `localhost` / `5432` | Used if `DATABASE_URL` isn't set |
+| `JWT_SECRET` | auto-generated | **Set this explicitly for anything beyond local demo** (`openssl rand -hex 32`) — without it, a random secret is generated per-process and all tokens are invalidated on restart |
+| `ADMIN_INITIAL_EMAIL` / `ADMIN_INITIAL_PASSWORD` | `admin@ulpf.local` / — | If `ADMIN_INITIAL_PASSWORD` is set, an admin account is bootstrapped on first startup (only if no users exist yet) |
+| `CORS_ORIGINS` | `http://localhost:5173,http://localhost:5174,http://localhost:3000` | Comma-separated allowlist |
+| `OLLAMA_URL` / `OLLAMA_MODEL` / `OLLAMA_TIMEOUT_SECONDS` | `http://localhost:11434` / `llama3.2:latest` / `90` | LLM-assisted field mapping; falls back gracefully to `UNKNOWN` if unreachable |
+| `INGEST_BACKEND` | `sync` | `sync` processes events immediately in the request handler; `kafka` defers normalization/scoring to the worker via Redpanda |
+| `KAFKA_BROKERS` | `localhost:9092` | Only relevant if `INGEST_BACKEND=kafka` |
+| `MINIO_ENDPOINT` / `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | `localhost:9000` / `admin` / — | Raw event storage |
+| `OPENSEARCH_URL` | `http://localhost:9200` | |
+| `REDIS_URL` | `redis://localhost:6379/0` | |
+| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Used by the embedding-based field mapper |
+
+Frontend (`frontend/.env` or Vite env vars):
+
+| Variable | Default (dev) | Notes |
+|---|---|---|
+| `VITE_API_URL` | `http://localhost:8000/api/v1` | Backend base URL |
+| `VITE_DEMO_EMAIL` / `VITE_DEMO_PASSWORD` | falls back to `admin@ulpf.local` / `local-demo-admin-pw` | Powers the "Fill Demo Credentials" button — use a real, dedicated low-privilege account in production, never the real admin password (these are baked into the public JS bundle) |
+
+---
 
 ## Project structure
 
 ```
-backend/    FastAPI app, pipeline, integrity subsystem, tests
-frontend/   React + TypeScript UI
-deploy/     Docker Compose, Kubernetes manifests, nginx config, dev CA
-docs/       Full technical documentation (see table above)
-sbom/       Signed CycloneDX software bill of materials
-verifier/   Standalone offline evidence-bundle verifier (zero app dependency)
+backend/
+  app/
+    api/v1/           REST endpoints
+    core/              config, database, security, processing pipeline
+    analytics/          correlation engine + YAML rules
+    ai/                 Sentinel, LLM field mapping, deterministic mapping
+    services/            pack drafting, live detection loop, retention
+    parsers/              format detection + per-format parsers
+    models/                SQLAlchemy models
+  datasets/real/        real seeded log corpora + builder scripts
+  seed.py                 real-data bootstrap script
+  scripts/run_local_demo.py  no-Docker local runner (SQLite)
+
+frontend/
+  src/
+    pages/              one file per screen (Dashboard, Parser Lab, Attack Path, ...)
+    components/          shared UI (Sidebar, GlassCard, ...)
+    api/client.ts         typed API client
+    layouts/AppLayout.tsx  shared sidebar + main content shell
 ```
+
+---
+
+## Notes
+
+- All seeded demo data comes from real, publicly available log corpora (loghub, Zeek/Bro IDS output, AWS CloudTrail attack-simulation data, Windows Event Log attack-technique captures) — nothing in the dataset is synthetically generated.
+- Risk scores, correlation matches, and attack paths are computed live against whatever real data is actually ingested; empty states are shown honestly rather than padded with placeholder data.
