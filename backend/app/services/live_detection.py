@@ -103,8 +103,33 @@ def run_detection_cycle(db) -> dict:
     }
 
 
+# Real root cause found live: this instance's CPU limit is 0.15 vCPU
+# (confirmed via Render's own cpu_limit/cpu_usage metrics -- usage was
+# repeatedly hitting that exact ceiling every ~couple of minutes with no
+# bulk ingest running). Linux's cgroup CPU throttling doesn't gracefully
+# slow a process down once its quota is exhausted for a period -- it fully
+# suspends it until the next period, which is exactly what looked like
+# "hangs" (not OOM-killed, just completely unresponsive for a stretch):
+# correlation's sliding-window matching and Sentinel's profile diffing are
+# genuine CPU-heavy pure-Python work, run every 30s forever regardless of
+# whether anything actually changed since the last cycle, against a
+# dataset that's grown to 34k+ real events this session. Skipping the
+# cycle entirely when nothing new has arrived (a cheap COUNT query,
+# negligible next to the correlation work it replaces) cuts the average
+# CPU cost to near-zero during idle stretches -- which is most of a demo's
+# runtime -- while still reacting at full fidelity the instant real new
+# events show up. This optimization lives here (the background loop),
+# not inside run_detection_cycle itself, so a manual "Evaluate" trigger
+# (POST /correlations/evaluate) always runs for real regardless of
+# whether anything's new -- an explicit human request is never silently
+# skipped.
+_last_seen_event_count = None
+
+
 def _loop(interval_seconds: int):
     from app.core.database import SessionLocal
+    from app.models.all import NormalizedEvent
+    global _last_seen_event_count
     while not _stop_event.is_set():
         if _paused.is_set():
             _stop_event.wait(interval_seconds)
@@ -112,7 +137,10 @@ def _loop(interval_seconds: int):
         try:
             db = SessionLocal()
             try:
-                run_detection_cycle(db)
+                current_count = db.query(NormalizedEvent).count()
+                if current_count != _last_seen_event_count:
+                    run_detection_cycle(db)
+                    _last_seen_event_count = current_count
             finally:
                 db.close()
         except Exception as e:  # noqa: BLE001 -- a background cycle failing must never crash the app
