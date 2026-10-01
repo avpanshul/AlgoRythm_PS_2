@@ -78,6 +78,22 @@ class Settings(BaseSettings):
     # instead of a silent hardcoded constant.
     OLLAMA_TIMEOUT_SECONDS: int = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "90"))
     EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+
+    # Hosted LLM fallback for field-mapping classification (app/ai/llm.py).
+    # Real gap found live: this deployment has no reachable Ollama server
+    # (only localhost:11434 is ever configured, which doesn't exist on a
+    # single-container host like Render), so every LLM-assisted field
+    # classification silently fell back to UNKNOWN. Self-hosting a real
+    # Ollama model isn't realistic on a memory-constrained free instance
+    # (even a small model needs several GB of RAM). A hosted API call is the
+    # same shape of request this code already makes (one HTTP POST, no local
+    # model, no extra memory) -- just pointed at a real endpoint instead of
+    # an empty one. GROQ_API_KEY unset = this stays fully inert and the code
+    # falls back to the existing OLLAMA_URL behavior, so local dev with a
+    # real Ollama install is unaffected.
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+    GROQ_TIMEOUT_SECONDS: int = int(os.getenv("GROQ_TIMEOUT_SECONDS", "15"))
     
     # Security
     #

@@ -21,10 +21,12 @@ class LLMMappingResponse(BaseModel):
 
 class LLMReasoner:
     def __init__(self):
-        self.url = f"{settings.OLLAMA_URL}/api/generate"
-        self.model = settings.OLLAMA_MODEL
+        self.ollama_url = f"{settings.OLLAMA_URL}/api/generate"
+        self.ollama_model = settings.OLLAMA_MODEL
+        self.groq_url = "https://api.groq.com/openai/v1/chat/completions"
+        self.groq_model = settings.GROQ_MODEL
 
-    def ask_mapping(self, vendor: str, device_type: str, field_name: str, field_value: str, context: str, feedback: str = None) -> dict:
+    def _build_prompt(self, vendor: str, device_type: str, field_name: str, field_value: str, context: str, feedback: str) -> tuple[str, str]:
         canonical_fields = ", ".join(CANONICAL_FIELDS)
 
         # Item 5 (agent refine loop): `feedback` carries real information
@@ -33,9 +35,8 @@ class LLMReasoner:
         # genuinely different prompt, not a blind retry of the same question.
         feedback_block = f"\n\nFeedback from a previous attempt: {feedback}\nReconsider this field with that feedback in mind.\n" if feedback else ""
 
-        prompt = f"""
-You are a cybersecurity log parsing expert.
-A log from Vendor: {vendor}, Device: {device_type} has an unknown field.
+        system = "You are a cybersecurity log parsing expert. You MUST return ONLY a valid JSON object, no markdown, no other text."
+        user = f"""A log from Vendor: {vendor}, Device: {device_type} has an unknown field.
 Field Name: "{field_name}"
 Example Value: "{field_value}"
 Context in log: "{context}"
@@ -43,39 +44,60 @@ Context in log: "{context}"
 Your task is to map this field to exactly ONE of the following canonical fields:
 [{canonical_fields}]
 
-You MUST return ONLY a valid JSON object with exactly these keys:
+Return a JSON object with exactly these keys:
 "selected_field": (the chosen canonical field exactly as written in the list above)
 "confidence": (a float between 0.0 and 1.0)
-"reason": (a short explanation why)
+"reason": (a short explanation why)"""
+        return system, user
 
-Do not include markdown blocks, do not include any other text, ONLY the JSON object.
-"""
-        
-        payload = {
-            "model": self.model,
-            "prompt": prompt,
-            "stream": False,
-            "format": "json"
-        }
-        
+    def _validate(self, response_text: str) -> dict:
+        parsed = json.loads(response_text)
+        validated = LLMMappingResponse(**parsed)
+        # Ensure it didn't invent a field
+        if validated.selected_field not in CANONICAL_FIELDS:
+            raise ValueError("LLM invented a non-canonical field.")
+        return validated.model_dump()
+
+    def _ask_groq(self, system: str, user: str) -> dict:
+        resp = requests.post(
+            self.groq_url,
+            headers={"Authorization": f"Bearer {settings.GROQ_API_KEY}", "Content-Type": "application/json"},
+            json={
+                "model": self.groq_model,
+                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.1,
+            },
+            timeout=settings.GROQ_TIMEOUT_SECONDS,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        response_text = data["choices"][0]["message"]["content"]
+        return self._validate(response_text)
+
+    def _ask_ollama(self, system: str, user: str) -> dict:
+        resp = requests.post(
+            self.ollama_url,
+            json={"model": self.ollama_model, "prompt": f"{system}\n\n{user}", "stream": False, "format": "json"},
+            timeout=settings.OLLAMA_TIMEOUT_SECONDS,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        response_text = data.get("response", "")
+        return self._validate(response_text)
+
+    def ask_mapping(self, vendor: str, device_type: str, field_name: str, field_value: str, context: str, feedback: str = None) -> dict:
+        system, user = self._build_prompt(vendor, device_type, field_name, field_value, context, feedback)
         try:
-            resp = requests.post(self.url, json=payload, timeout=settings.OLLAMA_TIMEOUT_SECONDS)
-            resp.raise_for_status()
-            data = resp.json()
-            response_text = data.get("response", "")
-            
-            # Parse the constrained output
-            parsed = json.loads(response_text)
-            
-            # Validate output matches schema
-            validated = LLMMappingResponse(**parsed)
-            
-            # Ensure it didn't invent a field
-            if validated.selected_field not in CANONICAL_FIELDS:
-                raise ValueError("LLM invented a non-canonical field.")
-                
-            return validated.model_dump()
-            
+            # Real hosted API takes priority when configured (GROQ_API_KEY
+            # set) -- same shape of HTTP call this code already made, just
+            # pointed at an endpoint that actually exists. Falls back to
+            # Ollama (the original behavior, for real local installs) when
+            # no key is set, so this is purely additive, never a regression
+            # for anyone already running a local Ollama server.
+            if settings.GROQ_API_KEY:
+                return self._ask_groq(system, user)
+            return self._ask_ollama(system, user)
         except Exception as e:
             # Fallback if LLM fails or format is bad
             print(f"LLM Mapping failed: {e}")
