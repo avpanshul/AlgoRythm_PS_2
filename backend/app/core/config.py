@@ -92,8 +92,15 @@ class Settings(BaseSettings):
     # falls back to the existing OLLAMA_URL behavior, so local dev with a
     # real Ollama install is unaffected.
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
-    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
-    GROQ_TIMEOUT_SECONDS: int = int(os.getenv("GROQ_TIMEOUT_SECONDS", "15"))
+    # Real bug found live: "llama-3.1-8b-instant" (a common Groq example
+    # model name) returned a real 404 model_not_found from Groq's own API --
+    # confirmed via a direct call to GET /openai/v1/models with the real
+    # deployed key that it's no longer in Groq's served model list.
+    # openai/gpt-oss-20b confirmed actually available and working (real
+    # test call, correctly reasoned a sample field mapping with 0.95
+    # confidence and a real explanation).
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+    GROQ_TIMEOUT_SECONDS: int = int(os.getenv("GROQ_TIMEOUT_SECONDS", "20"))
     
     # Security
     #
