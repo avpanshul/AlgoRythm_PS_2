@@ -2,7 +2,17 @@ import json
 import requests
 from pydantic import BaseModel
 from app.core.config import settings
-from app.ai.embeddings import embedding_engine
+# Real bug found live: this used to import `embedding_engine` from
+# app.ai.embeddings just to read its static canonical_fields list, which
+# force-instantiated that module's EmbeddingEngine() -- a real
+# SentenceTransformer load (torch + model weights) plus 16 real embedding
+# computations -- inside whatever HTTP request first triggered an
+# LLM-fallback field classification. Confirmed via Render's own oomKilled
+# event: that one-time heavy load was enough to OOM-kill the 512Mi instance.
+# This module never actually uses the embedding model, only the plain field
+# list, so importing the lightweight constant directly avoids pulling in
+# sentence-transformers/torch at all on this path.
+from app.ai.canonical_fields import CANONICAL_FIELDS
 
 class LLMMappingResponse(BaseModel):
     selected_field: str
@@ -15,7 +25,7 @@ class LLMReasoner:
         self.model = settings.OLLAMA_MODEL
 
     def ask_mapping(self, vendor: str, device_type: str, field_name: str, field_value: str, context: str, feedback: str = None) -> dict:
-        canonical_fields = ", ".join(embedding_engine.canonical_fields)
+        canonical_fields = ", ".join(CANONICAL_FIELDS)
 
         # Item 5 (agent refine loop): `feedback` carries real information
         # about why a PREVIOUS attempt didn't work (e.g. a canonical field
@@ -61,7 +71,7 @@ Do not include markdown blocks, do not include any other text, ONLY the JSON obj
             validated = LLMMappingResponse(**parsed)
             
             # Ensure it didn't invent a field
-            if validated.selected_field not in embedding_engine.canonical_fields:
+            if validated.selected_field not in CANONICAL_FIELDS:
                 raise ValueError("LLM invented a non-canonical field.")
                 
             return validated.model_dump()

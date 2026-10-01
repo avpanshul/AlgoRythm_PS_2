@@ -1,31 +1,15 @@
 from sentence_transformers import SentenceTransformer
 from scipy.spatial.distance import cosine
 from app.core.config import settings
+from app.ai.canonical_fields import CANONICAL_FIELDS
 
 class EmbeddingEngine:
     def __init__(self):
         # This will download the model locally on first run if not present
         self.model = SentenceTransformer(settings.EMBEDDING_MODEL)
-        
+
         # Canonical vocabulary to map against
-        self.canonical_fields = [
-            "source.ip",
-            "source.port",
-            "destination.ip",
-            "destination.port",
-            "event.action",
-            "event.category",
-            "event.type",
-            "event.severity",
-            "event.outcome",
-            "network.protocol",
-            "network.transport",
-            "user.name",
-            "device.id",
-            "device.vendor",
-            "device.product",
-            "timestamp"
-        ]
+        self.canonical_fields = CANONICAL_FIELDS
         
         # Pre-compute embeddings for canonical fields
         self.canonical_embeddings = {
