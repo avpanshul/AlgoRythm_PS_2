@@ -58,12 +58,8 @@ export default function ReplayCenter() {
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-      <header style={{ 
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, 
-        position: 'sticky', top: 0, zIndex: 50, 
-        background: 'rgba(238, 242, 246, 0.9)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
-        padding: '16px', margin: '-16px -16px 24px -16px', borderRadius: 12,
-        boxShadow: '0 4px 20px rgba(0,0,0,0.02)'
+      <header style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12,
       }}>
         <div>
           <h1 style={{ fontSize: 'clamp(40px, 4vw, 52px)', fontWeight: 800, color: '#0044A8', letterSpacing: '-0.03em', lineHeight: 1.1 }}>
