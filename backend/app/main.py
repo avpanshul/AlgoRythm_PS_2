@@ -194,7 +194,7 @@ app.include_router(integrations_api.router, prefix=settings.API_V1_STR, tags=["I
 app.include_router(settings_api.router, prefix=settings.API_V1_STR, tags=["Settings"])
 app.include_router(threat_intel.router, prefix=settings.API_V1_STR, tags=["Threat Intel"])
 app.include_router(integrity.router, prefix=settings.API_V1_STR, tags=["Integrity"])
-app.include_router(supervisory.router, prefix=settings.API_V1_STR, tags=["Supervisory"])
+app.include_router(supervisory.router, prefix=settings.API_V1_STR, tags=["Supervisory"], dependencies=[Depends(get_current_user)])
 app.include_router(evidence.router, prefix=settings.API_V1_STR, tags=["Evidence"])
 app.include_router(export.router, prefix=settings.API_V1_STR, tags=["Export"])
 app.include_router(privacy_policies.router, prefix=settings.API_V1_STR, tags=["Privacy"], dependencies=[Depends(get_current_user)])
