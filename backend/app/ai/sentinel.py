@@ -140,10 +140,18 @@ def update_all_profiles(db: Session) -> dict:
     would instead call update_profile() inline per ingested event or on a
     scheduler, same tradeoff as app/analytics/correlation.py's
     evaluate_all_rules."""
+    # Capped per cycle (explicit request to keep memory headroom below the
+    # 512MiB limit): this query is already correctly scoped to unprocessed
+    # rows, but with no LIMIT a backlog (e.g. after downtime, or a bulk
+    # ingest) could still load a large batch in one cycle. Safe to cap --
+    # sentinel_processed_at makes this resumable, so an uncapped backlog
+    # just gets worked off over more 30s cycles instead of one big spike.
+    SENTINEL_BATCH_LIMIT = 3000
     events = (
         db.query(NormalizedEvent)
         .filter(NormalizedEvent.source_ip.isnot(None), NormalizedEvent.sentinel_processed_at.is_(None))
         .order_by(NormalizedEvent.source_ip.asc(), NormalizedEvent.timestamp.asc())
+        .limit(SENTINEL_BATCH_LIMIT)
         .all()
     )
 

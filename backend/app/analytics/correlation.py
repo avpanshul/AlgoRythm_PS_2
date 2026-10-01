@@ -44,7 +44,13 @@ RULES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "correlatio
 # window_minutes are all short (minutes to a couple hours), so real
 # multi-stage attacks are still fully captured; only correlation against
 # events older than this cap is skipped on a given cycle.
-EVAL_RECENT_EVENT_LIMIT = 8000
+#
+# Lowered 8000 -> 4000 to deliberately leave more memory headroom below the
+# 512MiB instance limit (explicit request, after two real leaks already ate
+# into that margin once) -- the real dataset keeps growing via ongoing real
+# ingestion, so building in slack now rather than only reacting to the next
+# OOM is the point.
+EVAL_RECENT_EVENT_LIMIT = 4000
 
 
 def load_rules() -> list:
