@@ -47,7 +47,14 @@ _ALIASES = {
 # individually-named fields (so a raw_field name is meaningful to alias-match
 # against). "UNKNOWN"/anything else falls through to a single "raw" blob --
 # there's nothing here for this table to classify.
-DETERMINISTIC_ELIGIBLE_FORMATS = {"KeyValue", "JSON", "CEF"}
+#
+# CSV included since pack_drafting.py's wizard-preview path now uses a real
+# header row (when the pasted sample has one) to name fields, same as
+# KeyValue/JSON/CEF -- real per-event CSV ingestion still names fields
+# positionally (no header on a single line), so classify_field_deterministic
+# just correctly finds no alias match there, same as any other unrecognized
+# name; this doesn't change that behavior.
+DETERMINISTIC_ELIGIBLE_FORMATS = {"KeyValue", "JSON", "CEF", "CSV"}
 
 
 def _normalize(name: str) -> str:

@@ -79,7 +79,29 @@ def classify_sample_fields(sample: str, vendor: str = None, device_type: str = N
     if format_type == "UNKNOWN":
         return {"status": "undetectable_format", "detail": "Could not confidently detect a known log format from this sample", "format_type": "UNKNOWN", "format_confidence": detection.get("confidence", 0.0)}
 
-    parsed = parse_log(sample, format_type)
+    # Real bug found live: the core CSV parser (deterministic.py:parse_csv)
+    # only ever sees ONE line at a time, by design -- real per-event CSV
+    # ingestion has no embedded header per row, so it correctly names fields
+    # positionally (field_0, field_1, ...). But this wizard preview takes a
+    # user-pasted *sample*, which can legitimately include a real header row
+    # above a real data row -- and without using it, every field showed as
+    # a meaningless field_0/field_1/... with no real name to classify at
+    # all. Scoped to just this preview path (never touches the real
+    # per-event parser used by actual ingestion) so this doesn't change
+    # behavior for any real CSV source's live events.
+    if format_type == "CSV":
+        lines = [ln for ln in sample.splitlines() if ln.strip()]
+        if len(lines) >= 2:
+            headers = [h.strip() for h in lines[0].split(",")]
+            values = [v.strip() for v in lines[1].split(",")]
+            if len(headers) == len(values) and all(headers):
+                parsed = dict(zip(headers, values))
+            else:
+                parsed = parse_log(sample, format_type)
+        else:
+            parsed = parse_log(sample, format_type)
+    else:
+        parsed = parse_log(sample, format_type)
     if not isinstance(parsed, dict) or not parsed:
         return {"status": "unparseable", "detail": f"Deterministic {format_type} parser returned no fields", "format_type": format_type, "format_confidence": detection.get("confidence", 0.0)}
 
